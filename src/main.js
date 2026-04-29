@@ -100,10 +100,10 @@ const state = {
 
 function difficultyProfile() {
   const survived = survivedSeconds()
-  const ramp = smoothstep(clamp(survived / 90, 0, 1))
-  const sequenceRamp = smoothstep(clamp((survived - 10) / 35, 0, 1))
-  const chaosRamp = smoothstep(clamp((survived - 30) / 45, 0, 1))
-  const lateRamp = smoothstep(clamp((survived - 60) / 45, 0, 1))
+  const ramp = smoothstep(clamp(survived / 60, 0, 1))
+  const sequenceRamp = smoothstep(clamp((survived - 8) / 26, 0, 1))
+  const chaosRamp = smoothstep(clamp((survived - 24) / 34, 0, 1))
+  const lateRamp = smoothstep(clamp((survived - 45) / 35, 0, 1))
 
   return {
     survived,
@@ -111,11 +111,11 @@ function difficultyProfile() {
     sequenceRamp,
     chaosRamp,
     level: Math.floor(ramp * 5) + 1,
-    spawnInterval: lerp(1, 0.45, ramp) * (isFeverActive() ? 0.78 : 1),
-    targetLife: lerp(1.5, 0.75, ramp),
-    drainRate: lerp(4.8, 11.8, ramp) * (isFeverActive() ? 0.84 : 1),
-    redChance: lerp(0.1, 0.25, ramp),
-    sliderChance: lerp(0.05, 0.18, ramp),
+    spawnInterval: lerp(0.95, 0.42, ramp) * (isFeverActive() ? 0.78 : 1),
+    targetLife: lerp(1.42, 0.72, ramp),
+    drainRate: lerp(5.4, 12.6, ramp) * (isFeverActive() ? 0.84 : 1),
+    redChance: lerp(0.11, 0.27, ramp),
+    sliderChance: lerp(0.06, 0.2, ramp),
     greenChain: Math.max(3, Math.round(lerp(3, 5, sequenceRamp) + lateRamp + (isFeverActive() ? 2 : 0))),
   }
 }
@@ -199,7 +199,7 @@ function update(deltaTime) {
         target.resolved = true
         target.cracked = true
         state.missCount += 1
-        applyPerformancePenalty(12, 'MISSED GREEN: MOMENTUM DIPPED.', state.missCount >= 4 ? 'misses' : 'slow')
+        applyPerformancePenalty(16, 'MISSED GREEN: MOMENTUM DIPPED.', state.missCount >= 4 ? 'misses' : 'slow')
         showCaption('REACTION TOO SLOW!', 'bad', 1)
         missJuice(target.x, target.y)
         burst(target.x, target.y, '#ff4d6d', 10)
@@ -1351,7 +1351,7 @@ function handlePointerDown(x, y) {
 function handleTap(x, y) {
   const target = findTargetAt(x, y)
   if (!target) {
-    applyPerformancePenalty(4, 'AIRBALL TAP: THE JUDGES BLINKED.', 'crowd')
+    applyPerformancePenalty(6, 'AIRBALL TAP: THE JUDGES BLINKED.', 'crowd')
     showCaption('FALSE START!', 'bad', 0.85)
     missJuice(x, y)
     return
@@ -1529,7 +1529,7 @@ function shouldEliminateFromRace() {
   const standings = raceStandings()
   const leader = standings[0]
   const second = standings[1]
-  return playerRaceRank() === 3 && second.position - player.position > 95 && leader.position - player.position > 145
+  return playerRaceRank() === 3 && second.position - player.position > 78 && leader.position - player.position > 125
 }
 
 function ordinal(value) {
@@ -1633,7 +1633,7 @@ function failSlider(target, caption, cause = 'slow') {
   target.failed = true
   target.dragging = false
   if (state.activeSliderId === target.id) state.activeSliderId = null
-  applyPerformancePenalty(16, 'SLIDER BOTCHED: MOMENTUM DIPPED.', cause)
+  applyPerformancePenalty(20, 'SLIDER BOTCHED: MOMENTUM DIPPED.', cause)
   showCaption(caption, 'bad', 0.9)
   state.redFlashUntil = state.time + 0.25
   state.redShakeUntil = state.time + 0.28
@@ -1913,7 +1913,7 @@ function applyPerformancePenalty(amount, line, cause = 'crowd') {
   state.performance = clamp(state.performance - amount, 0, MAX_PERFORMANCE)
   state.streak = 0
   state.announcer = line
-  applyRaceImpulse(-amount * 0.72, amount >= 16 ? 'YOU\'RE FALLING!' : '')
+  applyRaceImpulse(-amount * 0.9, amount >= 16 ? 'YOU\'RE FALLING!' : '')
   if (state.performance <= 0) {
     eliminate('THE CROWD WATCHED YOU DESPAWN.', cause)
   }
@@ -2050,10 +2050,10 @@ function hitCaption(timing) {
 function spawnInterval() {
   const profile = difficultyProfile()
   if (profile.survived < 5) return 0.95
-  if (profile.survived < 10) return Math.max(0.82, profile.spawnInterval)
-  if (profile.survived < 30) return Math.max(0.62, profile.spawnInterval)
-  if (profile.survived < 60) return Math.max(0.52, profile.spawnInterval)
-  return Math.max(0.45, profile.spawnInterval)
+  if (profile.survived < 10) return Math.max(0.78, profile.spawnInterval)
+  if (profile.survived < 30) return Math.max(0.56, profile.spawnInterval)
+  if (profile.survived < 60) return Math.max(0.48, profile.spawnInterval)
+  return Math.max(0.42, profile.spawnInterval)
 }
 
 function performanceDrainRate() {
