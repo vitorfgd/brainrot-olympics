@@ -26,6 +26,9 @@ const CHARACTERS = [
 ]
 for (const character of CHARACTERS) {
   character.image = new Image()
+  character.image.addEventListener('load', () => {
+    character.transparentImage = createTransparentCharacterImage(character.image)
+  })
   character.image.src = character.imageSrc
 }
 const canvas = document.querySelector('#game')
@@ -210,12 +213,11 @@ function update(deltaTime) {
     state.performance = clamp(state.performance - performanceDrainRate() * deltaTime, 0, MAX_PERFORMANCE)
 
     if (state.performance <= 0) {
-      const idleTooLong = state.time - state.lastGreenHitAt > 2.2
-      eliminate('THE CROWD WATCHED YOU DESPAWN.', idleTooLong ? 'stood_still' : 'momentum')
+      eliminateFromRaceCutoff()
     }
 
     if (shouldEliminateFromRace()) {
-      eliminate('YOU GOT PODIUM GAPPED.', 'momentum')
+      eliminateFromRaceCutoff()
     }
   }
 
@@ -1052,7 +1054,7 @@ function drawCharacterSelection() {
   ctx.lineWidth = 5
   roundRect(30, 34, 480, 118, 28)
   ctx.stroke()
-  drawText('BRAIN ROT SELECTION', LOGICAL_WIDTH / 2, 76, 31, '#3d2c5f', 'center', 1000)
+  drawText('CHOOSE YOUR BRAINROT', LOGICAL_WIDTH / 2, 76, 31, '#3d2c5f', 'center', 1000)
   drawText('PICK YOUR QUESTIONABLE ATHLETE', LOGICAL_WIDTH / 2, 112, 15, '#f15bb5', 'center', 900)
 
   for (const character of CHARACTERS) {
@@ -1161,10 +1163,12 @@ function drawCharacterShape(character, x, y) {
 function drawCharacterImage(character, x, y) {
   const maxWidth = 118
   const maxHeight = 126
-  const image = character.image
-  const scale = Math.min(maxWidth / image.naturalWidth, maxHeight / image.naturalHeight)
-  const width = image.naturalWidth * scale
-  const height = image.naturalHeight * scale
+  const image = character.transparentImage || character.image
+  const imageWidth = image.naturalWidth || image.width
+  const imageHeight = image.naturalHeight || image.height
+  const scale = Math.min(maxWidth / imageWidth, maxHeight / imageHeight)
+  const width = imageWidth * scale
+  const height = imageHeight * scale
 
   ctx.save()
   ctx.shadowColor = character.color
@@ -1178,6 +1182,30 @@ function drawCharacterImage(character, x, y) {
   ctx.lineWidth = 4
   roundRect(x - maxWidth / 2, y - maxHeight / 2, maxWidth, maxHeight, 24)
   ctx.stroke()
+}
+
+function createTransparentCharacterImage(image) {
+  const buffer = document.createElement('canvas')
+  const bufferContext = buffer.getContext('2d')
+  buffer.width = image.naturalWidth
+  buffer.height = image.naturalHeight
+  bufferContext.drawImage(image, 0, 0)
+
+  const imageData = bufferContext.getImageData(0, 0, buffer.width, buffer.height)
+  const pixels = imageData.data
+  for (let i = 0; i < pixels.length; i += 4) {
+    const red = pixels[i]
+    const green = pixels[i + 1]
+    const blue = pixels[i + 2]
+    const brightness = Math.max(red, green, blue)
+    if (brightness < 30) {
+      pixels[i + 3] = 0
+    } else if (brightness < 58) {
+      pixels[i + 3] = Math.min(pixels[i + 3], Math.round((brightness - 30) * 9))
+    }
+  }
+  bufferContext.putImageData(imageData, 0, 0)
+  return buffer
 }
 
 function drawCharacterFace(x, y) {
@@ -1483,6 +1511,8 @@ function updateRace(deltaTime) {
     competitor.position += competitor.velocity * deltaTime
   }
 
+  syncRaceToPerformance(profile)
+
   const player = playerCompetitor()
   state.race.cameraY = lerp(state.race.cameraY, player.position, 0.12)
 
@@ -1532,7 +1562,55 @@ function shouldEliminateFromRace() {
   return playerRaceRank() === 3 && second.position - player.position > 78 && leader.position - player.position > 125
 }
 
+function syncRaceToPerformance(profile) {
+  const player = playerCompetitor()
+  if (!player) return
+
+  const performanceRatio = state.performance / MAX_PERFORMANCE
+  const pressure = 1 - performanceRatio
+  if (performanceRatio > 0.72) return
+
+  for (const competitor of state.race.competitors) {
+    if (competitor.isPlayer) continue
+
+    const aheadAtZero = competitor.lane === 0 ? 126 : 82
+    const catchupStart = competitor.lane === 0 ? -118 : -150
+    const catchupProgress = smoothstep(clamp((0.72 - performanceRatio) / 0.72, 0, 1))
+    const targetGap = lerp(catchupStart, aheadAtZero, catchupProgress)
+    const targetPosition = player.position + targetGap
+    const pull = 0.025 + pressure * 0.13 + profile.ramp * 0.018
+    if (competitor.position < targetPosition) {
+      competitor.position += (targetPosition - competitor.position) * pull
+    }
+  }
+}
+
+function forceRaceCutoffVisual() {
+  const player = playerCompetitor()
+  if (!player) return
+
+  const lowestOpponent = state.race.competitors
+    .filter((competitor) => !competitor.isPlayer)
+    .reduce((lowest, competitor) => Math.min(lowest, competitor.position), Infinity)
+
+  player.position = Math.min(player.position, lowestOpponent - 90)
+  player.velocity = Math.min(player.velocity, -18)
+  state.race.cameraY = player.position
+  state.race.alertText = 'NOT EVEN TOP THREE!'
+  state.race.alertUntil = state.time + 1.4
+}
+
+function eliminateFromRaceCutoff() {
+  forceRaceCutoffVisual()
+  eliminate('NOT EVEN TOP THREE ANYMORE.', 'cutoff')
+}
+
+function handlePerformanceCrash() {
+  eliminateFromRaceCutoff()
+}
+
 function ordinal(value) {
+  if (value >= 4) return 'OUT'
   return value === 1 ? '1ST' : value === 2 ? '2ND' : '3RD'
 }
 
@@ -1915,7 +1993,11 @@ function applyPerformancePenalty(amount, line, cause = 'crowd') {
   state.announcer = line
   applyRaceImpulse(-amount * 0.9, amount >= 16 ? 'YOU\'RE FALLING!' : '')
   if (state.performance <= 0) {
-    eliminate('THE CROWD WATCHED YOU DESPAWN.', cause)
+    if (cause === 'red') {
+      eliminate('RED TARGET SENT YOU TO THE SHADOW REALM.', 'red')
+    } else {
+      eliminateFromRaceCutoff()
+    }
   }
 }
 
@@ -1931,7 +2013,7 @@ function eliminate(reason, cause = 'momentum') {
   state.elimination.finalScore = state.score
   state.elimination.finalStreak = finalStreak
   state.elimination.finalSurvival = survivedSeconds()
-  state.elimination.finalRank = playerRaceRank()
+  state.elimination.finalRank = cause === 'cutoff' ? 4 : playerRaceRank()
   state.announcer = 'BROADCAST SIGNAL LOST.'
   state.activeSliderId = null
   state.pointer.active = false
@@ -2021,6 +2103,7 @@ function updateMedalProgression() {
 function eliminationStamp(cause) {
   const stamps = {
     red: 'DISQUALIFIED',
+    cutoff: 'CUT FROM PODIUM',
     slow: 'REACTION TOO SLOW',
     stood_still: 'STOOD STILL TOO LONG',
     misses: 'FAILED THE VIBE CHECK',
