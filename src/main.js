@@ -76,7 +76,7 @@ const state = {
   },
   announcer: 'OPENING CEREMONY: KEEP PERFORMING OR GET CUT.',
   caption: {
-    text: 'STILL IN!',
+    text: '',
     kind: 'info',
     until: 0,
   },
@@ -742,7 +742,7 @@ function drawBroadcastHud() {
 }
 
 function drawCaption() {
-  if (state.caption.until <= state.time) return
+  if (state.caption.until <= state.time || !state.caption.text) return
 
   const remaining = clamp(state.caption.until - state.time, 0, 1)
   const scale = 1 + Math.sin(state.time * 28) * 0.025
@@ -752,11 +752,8 @@ function drawCaption() {
   ctx.translate(LOGICAL_WIDTH / 2, 246)
   ctx.scale(scale, scale)
   ctx.globalAlpha = clamp(remaining * 2.2, 0, 1)
-  drawPanel(-190, -30, 380, 60, 'rgba(255, 255, 255, 0.9)')
-  ctx.strokeStyle = color
-  ctx.lineWidth = 5
-  roundRect(-190, -30, 380, 60, 22)
-  ctx.stroke()
+  ctx.shadowColor = 'rgba(61, 44, 95, 0.34)'
+  ctx.shadowBlur = 12
   drawText(state.caption.text, 0, 0, 30, color, 'center', 1000)
   ctx.restore()
 }
@@ -1379,9 +1376,6 @@ function handlePointerDown(x, y) {
 function handleTap(x, y) {
   const target = findTargetAt(x, y)
   if (!target) {
-    applyPerformancePenalty(6, 'AIRBALL TAP: THE JUDGES BLINKED.', 'crowd')
-    showCaption('FALSE START!', 'bad', 0.85)
-    missJuice(x, y)
     return
   }
 
@@ -1418,8 +1412,9 @@ function handleTap(x, y) {
   state.performance = clamp(state.performance + 28, 0, MAX_PERFORMANCE)
   const medalUpgraded = updateMedalProgression()
   if (!medalUpgraded) {
+    const caption = hitCaption(timing)
     state.announcer = hypeLine()
-    showCaption(hitCaption(timing), timing > 0.72 ? 'perfect' : 'info')
+    if (caption) showCaption(caption, timing > 0.72 ? 'perfect' : 'info')
   }
   hitJuice(target.x, target.y, `+${Math.floor((100 + (state.streak - 1) * 10) * (isFeverActive() ? 2 : 1))}`, '#2ee59d')
   burst(target.x, target.y, '#2ee59d', 20)
@@ -2053,7 +2048,7 @@ function resetGame() {
   state.elimination.finalSurvival = 0
   state.elimination.finalRank = 3
   state.announcer = 'NEW HEAT: KEEP MOVING.'
-  showCaption('STILL IN!', 'info')
+  state.caption.until = 0
   initRace()
   state.activeSliderId = null
   state.targets = []
@@ -2127,7 +2122,7 @@ function hitCaption(timing) {
   if (timing > 0.72) return 'PERFECT!'
   if (state.streak > 0 && state.streak % 5 === 0) return 'CROWD GOES WILD!'
   if (state.streak > 0 && state.streak % 3 === 0) return 'BRAIN ROT SPEED!'
-  return 'STILL IN!'
+  return ''
 }
 
 function spawnInterval() {
