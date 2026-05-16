@@ -1,20 +1,44 @@
 import { JUDGES, STAGES } from './rules.js'
-import { IMAGE_ASSETS, MENU_MUSIC_URLS, SFX_URLS, SFX_VOLUMES } from './assetsManifest.js'
+import {
+  IMAGE_ASSETS,
+  MENU_MUSIC_URLS,
+  PRELOAD_SFX,
+  SFX_POOL_SIZES,
+  SFX_URLS,
+  SFX_VOLUMES,
+} from './assetsManifest.js'
 
 const RUN_MUSIC_VOLUME = 0.18
 const MENU_MUSIC_VOLUME = 0.03
+const HAVE_FUTURE_DATA = 2
 
 export function createAssetManager() {
   const images = {}
   const judgeImages = {}
   const stagePortraits = {}
   const music = new Map()
-  const menuPlaylist = MENU_MUSIC_URLS.map((url) => {
+  const audioByUrl = new Map()
+  const sfxPools = new Map()
+  const sfxPoolCursor = new Map()
+
+  function preloadAudio(url) {
+    if (!url || audioByUrl.has(url)) return audioByUrl.get(url)
     const audio = new Audio(url)
-    audio.loop = false
-    audio.volume = MENU_MUSIC_VOLUME
+    audio.preload = 'auto'
+    audio.load()
+    audioByUrl.set(url, audio)
     return audio
-  })
+  }
+
+  function audioForUrl(url) {
+    if (!audioByUrl.has(url)) preloadAudio(url)
+    return audioByUrl.get(url)
+  }
+
+  const allMusicUrls = [...new Set([...MENU_MUSIC_URLS, ...JUDGES.map((judge) => judge.musicSrc)])]
+  for (const url of allMusicUrls) preloadAudio(url)
+
+  const menuPlaylist = MENU_MUSIC_URLS.map((url) => audioForUrl(url))
 
   for (const [key, src] of Object.entries(IMAGE_ASSETS)) {
     images[key] = loadImage(src)
@@ -25,16 +49,26 @@ export function createAssetManager() {
     for (const skin of judge.skins) {
       judgeImages[judge.id][skin.id] = loadImage(skin.imageSrc)
     }
-    if (!music.has(judge.musicSrc)) {
-      const audio = new Audio(judge.musicSrc)
-      audio.loop = true
-      audio.volume = RUN_MUSIC_VOLUME
-      music.set(judge.musicSrc, audio)
-    }
+    if (!music.has(judge.musicSrc)) music.set(judge.musicSrc, audioForUrl(judge.musicSrc))
   }
 
   for (const stage of STAGES) {
     if (stage.portraitSrc) stagePortraits[stage.id] = loadImage(stage.portraitSrc)
+  }
+
+  for (const name of PRELOAD_SFX) {
+    const url = SFX_URLS[name]
+    if (!url) continue
+    const size = SFX_POOL_SIZES[name] ?? 1
+    sfxPools.set(
+      name,
+      Array.from({ length: size }, () => {
+        const audio = new Audio(url)
+        audio.preload = 'auto'
+        audio.load()
+        return audio
+      }),
+    )
   }
 
   let activeAudio = null
@@ -72,10 +106,11 @@ export function createAssetManager() {
     activeMenuAudio?.pause()
     if (activeMenuAudio) activeMenuAudio.currentTime = 0
     activeMenuAudio = audio
+    activeMenuAudio.loop = false
     activeMenuAudio.currentTime = 0
     activeMenuAudio.volume = MENU_MUSIC_VOLUME
     menuMusicActive = true
-    activeMenuAudio.play().catch(() => {
+    playWhenReady(activeMenuAudio, () => {
       menuMusicActive = false
       menuMusicBlocked = true
     })
@@ -96,6 +131,15 @@ export function createAssetManager() {
     return index
   }
 
+  function playRunMusic() {
+    if (!activeAudio) return
+    activeAudio.loop = true
+    activeAudio.volume = RUN_MUSIC_VOLUME
+    playWhenReady(activeAudio, () => {
+      runMusicBlocked = true
+    })
+  }
+
   return {
     images,
     judgeImages,
@@ -113,9 +157,7 @@ export function createAssetManager() {
     unlockAudio() {
       if (activeAudio && (activeAudio.paused || runMusicBlocked)) {
         runMusicBlocked = false
-        activeAudio.play().catch(() => {
-          runMusicBlocked = true
-        })
+        playRunMusic()
       }
       if (menuMusicBlocked && menuMusicWanted && !activeAudio) {
         menuMusicBlocked = false
@@ -133,9 +175,7 @@ export function createAssetManager() {
       }
       activeAudio = next
       runMusicBlocked = false
-      activeAudio.play().catch(() => {
-        runMusicBlocked = true
-      })
+      playRunMusic()
     },
     stopMusic() {
       if (!activeAudio) return
@@ -152,13 +192,34 @@ export function createAssetManager() {
     },
     playSfx(name, enabled, volumeScale = 1) {
       if (!enabled) return
-      const url = SFX_URLS[name] || SFX_URLS.click
+      const resolved = SFX_URLS[name] ? name : 'click'
+      const volume = Math.max(0, Math.min(1, (SFX_VOLUMES[resolved] ?? 0.34) * volumeScale))
+      const pool = sfxPools.get(resolved)
+      if (pool?.length) {
+        const index = sfxPoolCursor.get(resolved) ?? 0
+        sfxPoolCursor.set(resolved, (index + 1) % pool.length)
+        const clip = pool[index]
+        clip.pause()
+        clip.currentTime = 0
+        clip.volume = volume
+        clip.play().catch(() => {})
+        return
+      }
+      const url = SFX_URLS[resolved]
       if (!url) return
       const clip = new Audio(url)
-      clip.volume = Math.max(0, Math.min(1, (SFX_VOLUMES[name] ?? 0.34) * volumeScale))
+      clip.volume = volume
       clip.play().catch(() => {})
     },
   }
+}
+
+function playWhenReady(audio, onFail) {
+  const attempt = () => {
+    audio.play().catch(() => onFail?.())
+  }
+  if (audio.readyState >= HAVE_FUTURE_DATA) attempt()
+  else audio.addEventListener('canplay', attempt, { once: true })
 }
 
 function loadImage(src) {

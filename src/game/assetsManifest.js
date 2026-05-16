@@ -79,3 +79,32 @@ export const MENU_MUSIC_URLS = [
   `${ASSET_BASE}audio/coolman_too_much_burrito.ogg`,
   `${ASSET_BASE}audio/dj_baby_baby_sped_up.ogg`,
 ]
+
+/** SFX warmed at boot (FTUE run + results + common UI). */
+export const PRELOAD_SFX = [
+  'countdownTick',
+  'targetSpawn',
+  'hitGood',
+  'hitOkay',
+  'hitMiss',
+  'combo10',
+  'combo25Plus',
+  'judgeReactPositive',
+  'judgeReactNegative',
+  'stageClear',
+  'runFailed',
+  'click',
+  'cancelClick',
+  'gradeReveal',
+  'medalPop',
+  'coinCountTick',
+  'coinRewardBurst',
+]
+
+/** Extra pooled instances for sounds that can overlap. */
+export const SFX_POOL_SIZES = {
+  hitGood: 2,
+  hitOkay: 2,
+  hitMiss: 2,
+  targetSpawn: 2,
+}
