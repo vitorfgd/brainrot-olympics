@@ -114,12 +114,50 @@ function runShakeOffset(state) {
   }
 }
 
+const CAPTION_MAX_WIDTH = 468
+
 export function drawText(ctx, text, x, y, size, color = '#fff', align = 'center', weight = 800) {
   ctx.fillStyle = color
   ctx.textAlign = align
   ctx.textBaseline = 'middle'
   ctx.font = `${weight} ${size}px Bungee, system-ui, Segoe UI, sans-serif`
   ctx.fillText(text, x, y)
+}
+
+function measureDisplayFont(ctx, size, weight) {
+  ctx.font = `${weight} ${size}px Bungee, system-ui, Segoe UI, sans-serif`
+}
+
+function wrapDisplayLines(ctx, text, maxWidth, size, weight = 1000, maxLines = 2) {
+  measureDisplayFont(ctx, size, weight)
+  const lines = []
+  for (const paragraph of String(text).split('\n')) {
+    const words = paragraph.trim().split(/\s+/).filter(Boolean)
+    if (!words.length) continue
+    let current = words[0]
+    for (let i = 1; i < words.length; i += 1) {
+      const trial = `${current} ${words[i]}`
+      if (ctx.measureText(trial).width <= maxWidth) current = trial
+      else {
+        lines.push(current)
+        current = words[i]
+        if (lines.length >= maxLines) return lines.slice(0, maxLines)
+      }
+    }
+    lines.push(current)
+    if (lines.length >= maxLines) return lines.slice(0, maxLines)
+  }
+  return lines.slice(0, maxLines)
+}
+
+function drawTextBlock(ctx, text, x, y, size, color, align, weight, maxWidth, maxLines = 2) {
+  const lines = wrapDisplayLines(ctx, text, maxWidth, size, weight, maxLines)
+  const lineHeight = size * 1.1
+  const startY = y - ((lines.length - 1) * lineHeight) / 2
+  lines.forEach((line, index) => {
+    drawText(ctx, line, x, startY + index * lineHeight, size, color, align, weight)
+  })
+  return lines.length
 }
 
 function drawOutlinedText(ctx, text, x, y, size, color, strokeColor, align = 'center', weight = 900, strokeWidth = 3) {
@@ -1086,10 +1124,12 @@ function drawRun(state) {
     const cap = run.caption
     const isNeg = cap.includes('MISS') || cap.includes('OFF')
     const isMilestone = COMBO_MILESTONE_AT.some(
-      (n) => cap.startsWith(`COMBO ${n}`) || cap.startsWith(`${n} -`),
+      (n) => cap.startsWith(`COMBO ${n}`) || cap.startsWith(`${n} COMBO`) || cap.startsWith(`${n} -`),
     )
-    const size = isMilestone ? 52 : 48
-    if (cap !== 'GO!') drawText(ctx, cap, LOGICAL_WIDTH / 2, 224, size, isNeg ? HOT_PINK : '#fce76d', 'center', 1000)
+    const size = isMilestone ? 46 : 44
+    if (cap !== 'GO!') {
+      drawTextBlock(ctx, cap, LOGICAL_WIDTH / 2, 224, size, isNeg ? HOT_PINK : '#fce76d', 'center', 1000, CAPTION_MAX_WIDTH)
+    }
   }
 
   if (run.goUntil > state.time) {
@@ -1100,7 +1140,7 @@ function drawRun(state) {
     ctx.fillStyle = freeze ? 'rgba(12, 5, 38, 0.42)' : 'rgba(12, 5, 38, 0.58)'
     ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
     drawText(ctx, run.completed ? 'STAGE CLEAR' : 'ELIMINATED', LOGICAL_WIDTH / 2, 456, 54, run.completed ? '#a8fbff' : HOT_PINK, 'center', 1000)
-    drawText(ctx, run.lastMissCause, LOGICAL_WIDTH / 2, 220, 22, '#ffffff', 'center', 900)
+    drawTextBlock(ctx, run.lastMissCause, LOGICAL_WIDTH / 2, 220, 22, '#ffffff', 'center', 900, CAPTION_MAX_WIDTH)
   }
 
   if (run.status === 'continueOffer') {
@@ -1147,9 +1187,12 @@ function drawGoSplash(state, run) {
 function drawFtueRunPrompt(state, run) {
   const ctx = state.ctx
   const prompt = ftuePrompt(run)
-  drawSpritePanel(state, 62, 150, 416, 54, 'footerPurple')
-  drawText(ctx, prompt.title, LOGICAL_WIDTH / 2, 169, 15, '#fce76d', 'center', 1000)
-  drawText(ctx, prompt.body, LOGICAL_WIDTH / 2, 190, 12, '#ffffff', 'center', 800)
+  const bodyLines = wrapDisplayLines(ctx, prompt.body, 380, 12, 800, 2)
+  const panelH = bodyLines.length > 1 ? 68 : 54
+  const panelY = 150
+  drawSpritePanel(state, 62, panelY, 416, panelH, 'footerPurple')
+  drawText(ctx, prompt.title, LOGICAL_WIDTH / 2, panelY + 19, 15, '#fce76d', 'center', 1000)
+  drawTextBlock(ctx, prompt.body, LOGICAL_WIDTH / 2, panelY + (bodyLines.length > 1 ? 46 : 40), 12, '#ffffff', 'center', 800, 380, 2)
 }
 
 function drawRunHud(state) {
@@ -1399,15 +1442,15 @@ function drawLeaderboardRow(state, row, rank, displayIndex, y, h) {
   ctx.stroke()
   ctx.shadowBlur = 0
 
-  drawOutlinedText(ctx, `#${rank}`, 62, midY, 29, color, '#24124f', 'left', 1000, 3)
+  drawOutlinedText(ctx, `#${rank}`, 62, midY, 26, color, '#24124f', 'left', 1000, 3)
   ctx.strokeStyle = 'rgba(255,255,255,0.52)'
   ctx.lineWidth = 2
   ctx.beginPath()
   ctx.moveTo(116, y + 11)
   ctx.lineTo(116, y + h - 11)
   ctx.stroke()
-  drawOutlinedText(ctx, row.name, 132, midY, row.name.length > 17 ? 21 : 25, color, '#24124f', 'left', 1000, 3)
-  drawOutlinedText(ctx, formatScore(row.score), 436, midY, 25, rank <= 3 ? SOFT_PINK : '#fce76d', '#24124f', 'right', 1000, 3)
+  drawOutlinedText(ctx, row.name, 132, midY, row.name.length > 14 ? 19 : 22, color, '#24124f', 'left', 1000, 3)
+  drawOutlinedText(ctx, formatScore(row.score), 440, midY, 22, rank <= 3 ? SOFT_PINK : '#fce76d', '#24124f', 'right', 1000, 3)
   drawLeaderboardPortrait(state, row, 480, midY, color, 27)
   ctx.restore()
 }
@@ -1431,8 +1474,8 @@ function drawLeaderboardPlayerRow(state, score, rank, y, h = 64, displayIndex = 
   ctx.lineWidth = 4
   ctx.stroke()
   ctx.shadowBlur = 0
-  drawOutlinedText(ctx, `YOU - #${rank}`, 68, midY, 34, '#ffe8ff', '#4a123c', 'left', 1000, 4)
-  drawOutlinedText(ctx, formatScore(score), 438, midY, 28, '#ffe8ff', '#4a123c', 'right', 1000, 3)
+  drawOutlinedText(ctx, `YOU - #${rank}`, 68, midY, 30, '#ffe8ff', '#4a123c', 'left', 1000, 4)
+  drawOutlinedText(ctx, formatScore(score), 440, midY, 24, '#ffe8ff', '#4a123c', 'right', 1000, 3)
   drawLeaderboardPortrait(state, row, 482, midY, HOT_PINK, 30)
   ctx.restore()
 }

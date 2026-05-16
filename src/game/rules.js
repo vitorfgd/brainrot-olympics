@@ -87,11 +87,11 @@ export function hitThemeById() {
 }
 
 export function milestoneCalloutText(combo) {
-  if (combo === 10) return 'COMBO 10 - WARMING UP'
-  if (combo === 25) return '25 - HEATING UP'
-  if (combo === 50) return '50 - ON FIRE'
-  if (combo === 100) return '100 - UNHINGED'
-  if (combo === 200) return '200 - MAX BRAINROT'
+  if (combo === 10) return 'COMBO 10\nWARMING UP'
+  if (combo === 25) return '25 COMBO\nHEATING UP'
+  if (combo === 50) return '50 COMBO\nON FIRE'
+  if (combo === 100) return '100 COMBO\nUNHINGED'
+  if (combo === 200) return '200 COMBO\nMAX BRAINROT'
   return ''
 }
 
@@ -265,19 +265,27 @@ export function qualityFromTiming(errorSeconds) {
 export function difficultyProfile(run) {
   const elapsed = run.elapsed
   const tier = run.mode === 'endless' ? Math.floor(elapsed / 30) : 0
-  const stageBoost = run.mode === 'stage' ? run.stage.difficulty : 0
-  if (run.ftue && run.stage?.id === 1 && run.spawnCount < 12) {
+  const stageBoost = run.mode === 'stage' ? run.stage?.difficulty ?? 0 : 0
+  const ftue = Boolean(run.ftue)
+  const elapsedDivisor = ftue ? 95 : 180
+
+  if (ftue && run.stage?.id === 1) {
+    const lessonT = clamp(run.spawnCount / 12, 0, 1)
+    const elapsedT = clamp(elapsed / elapsedDivisor, 0, 1)
+    const ramp = clamp(lessonT * 0.62 + elapsedT * 0.48 + stageBoost, 0, 1)
     return {
       tier,
-      ramp: 0,
-      spawnInterval: 1.45,
-      approach: 1.38,
-      slideTolerance: 58,
-      holdDuration: 0.82,
+      ramp,
+      spawnInterval: lerp(1.3, 0.56, ramp),
+      approach: lerp(1.22, 0.66, ramp),
+      slideTolerance: lerp(64, 48, ramp),
+      holdDuration: lerp(0.82, 1.05, ramp),
       maxLiveTargets: 1,
     }
   }
-  const ramp = Math.min(1, tier * 0.14 + elapsed / 180 + stageBoost)
+
+  const ftueBoost = ftue ? 0.14 : 0
+  const ramp = Math.min(1, tier * 0.14 + elapsed / elapsedDivisor + stageBoost + ftueBoost)
   return {
     tier,
     ramp,
@@ -285,7 +293,7 @@ export function difficultyProfile(run) {
     approach: lerp(1.18, 0.62, ramp),
     slideTolerance: lerp(68, 44, ramp),
     holdDuration: lerp(0.82, 1.28, ramp),
-    maxLiveTargets: run.mode === 'stage' && run.stage.id < 5 ? 1 : Math.min(1 + Math.floor(ramp * 3), 4),
+    maxLiveTargets: run.mode === 'stage' && run.stage?.id < 5 ? 1 : Math.min(1 + Math.floor(ramp * 3), 4),
   }
 }
 

@@ -351,7 +351,7 @@ function resolveHit(state, target, quality, caption) {
     const forgiven = shouldForgiveFtueMiss(run)
     if (forgiven) run.ftueFirstMissForgiven = true
     else applyHpDelta(state, run, hpDeltaForHit(quality))
-    run.caption = forgiven ? 'WATCH THE RING' : caption
+    run.caption = forgiven ? 'WATCH\nTHE RING' : caption
     run.captionUntil = state.time + (forgiven ? 1.15 : 0.85)
     run.internalMissCause = caption
     if (!forgiven && run.hp <= 0) {
