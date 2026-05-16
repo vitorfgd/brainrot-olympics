@@ -39,6 +39,7 @@ export function createAssetManager() {
 
   let activeAudio = null
   let activeMenuAudio = null
+  let runMusicBlocked = false
   let menuMusicActive = false
   let menuMusicBlocked = false
   let menuMusicWanted = false
@@ -110,9 +111,16 @@ export function createAssetManager() {
     },
     stopMenuMusic,
     unlockAudio() {
-      if (!menuMusicBlocked || !menuMusicWanted || activeAudio) return
-      menuMusicBlocked = false
-      this.startMenuMusic(true)
+      if (activeAudio && (activeAudio.paused || runMusicBlocked)) {
+        runMusicBlocked = false
+        activeAudio.play().catch(() => {
+          runMusicBlocked = true
+        })
+      }
+      if (menuMusicBlocked && menuMusicWanted && !activeAudio) {
+        menuMusicBlocked = false
+        this.startMenuMusic(true)
+      }
     },
     startMusic(judge, enabled) {
       if (!enabled) return
@@ -124,13 +132,17 @@ export function createAssetManager() {
         activeAudio.currentTime = 0
       }
       activeAudio = next
-      activeAudio.play().catch(() => {})
+      runMusicBlocked = false
+      activeAudio.play().catch(() => {
+        runMusicBlocked = true
+      })
     },
     stopMusic() {
       if (!activeAudio) return
       activeAudio.pause()
       activeAudio.currentTime = 0
       activeAudio = null
+      runMusicBlocked = false
     },
     setMusicEnabled(enabled) {
       if (!enabled) {
