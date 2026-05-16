@@ -38,17 +38,12 @@ export function judgeSpawnRegion(run) {
   }
   return { minX: midX + pad, maxX: LOGICAL_WIDTH - margin, minY: midY - pad, maxY: PLAY_BOTTOM - margin }
 }
+import { AssetIds } from './assetIds.js'
+import { randomChoice } from './rng.js'
+
 export const MAX_HP = 100
 export const HIT_QUALITY_VALUE = { perfect: 1, good: 0.75, okay: 0.45, miss: 0 }
 export const HIT_LABELS = { perfect: 'PERFECT', good: 'GOOD', okay: 'OKAY', miss: 'MISS' }
-
-const ASSET_BASE = import.meta.env.BASE_URL
-const JUDGE_MUSIC_SRC = {
-  blingbeak: `${ASSET_BASE}audio/blingbeak_long_ride.ogg`,
-  disco: `${ASSET_BASE}audio/disco_ataca.ogg`,
-  coolman: `${ASSET_BASE}audio/coolman_too_much_burrito.ogg`,
-  dj: `${ASSET_BASE}audio/dj_baby_baby_sped_up.ogg`,
-}
 
 export const JUDGES = [
   {
@@ -56,12 +51,12 @@ export const JUDGES = [
     name: 'BlingBeak',
     title: 'Beat Inspector',
     color: '#ff4ff0',
-    imageSrc: `${ASSET_BASE}characters/BlingBeak.png`,
-    musicSrc: JUDGE_MUSIC_SRC.blingbeak,
+    imageId: AssetIds.judges.blingbeakDefault,
+    musicId: AssetIds.music.blingbeak,
     skins: [
-      { id: 'default', name: 'BlingBeak', price: 0, imageSrc: `${ASSET_BASE}characters/BlingBeak.png` },
-      { id: 'partyhat', name: 'Partyhat', price: 1000, imageSrc: `${ASSET_BASE}characters/Partyhat.png` },
-      { id: 'maverick', name: 'Maverick', price: 200, imageSrc: `${ASSET_BASE}characters/Maverick.png` },
+      { id: 'default', name: 'BlingBeak', price: 0, imageId: AssetIds.judges.blingbeakDefault },
+      { id: 'partyhat', name: 'Partyhat', price: 1000, imageId: AssetIds.judges.blingbeakPartyhat },
+      { id: 'maverick', name: 'Maverick', price: 200, imageId: AssetIds.judges.blingbeakMaverick },
     ],
   },
   {
@@ -69,12 +64,12 @@ export const JUDGES = [
     name: 'Headband',
     title: 'Combo Prophet',
     color: '#70f66b',
-    imageSrc: `${ASSET_BASE}characters/Headband.png`,
-    musicSrc: JUDGE_MUSIC_SRC.disco,
+    imageId: AssetIds.judges.headbandDefault,
+    musicId: AssetIds.music.disco,
     skins: [
-      { id: 'default', name: 'Headband', price: 0, imageSrc: `${ASSET_BASE}characters/Headband.png` },
-      { id: 'disco', name: 'Disco', price: 1500, imageSrc: `${ASSET_BASE}characters/Disco.png` },
-      { id: 'galaxy_brain', name: 'Galaxy Brain', price: 200, imageSrc: `${ASSET_BASE}characters/Galaxy_Brain.png` },
+      { id: 'default', name: 'Headband', price: 0, imageId: AssetIds.judges.headbandDefault },
+      { id: 'disco', name: 'Disco', price: 1500, imageId: AssetIds.judges.discoSkin },
+      { id: 'galaxy_brain', name: 'Galaxy Brain', price: 200, imageId: AssetIds.judges.galaxyBrain },
     ],
   },
   {
@@ -82,12 +77,12 @@ export const JUDGES = [
     name: 'CoolMan',
     title: 'Gold Standard',
     color: '#a8fbff',
-    imageSrc: `${ASSET_BASE}characters/CoolMan.png`,
-    musicSrc: JUDGE_MUSIC_SRC.coolman,
+    imageId: AssetIds.judges.coolmanDefault,
+    musicId: AssetIds.music.coolman,
     skins: [
-      { id: 'default', name: 'CoolMan', price: 0, imageSrc: `${ASSET_BASE}characters/CoolMan.png` },
-      { id: 'king', name: 'King', price: 800, imageSrc: `${ASSET_BASE}characters/King.png` },
-      { id: 'dolphin', name: 'Dolphin', price: 200, imageSrc: `${ASSET_BASE}characters/Dolphin.png` },
+      { id: 'default', name: 'CoolMan', price: 0, imageId: AssetIds.judges.coolmanDefault },
+      { id: 'king', name: 'King', price: 800, imageId: AssetIds.judges.coolmanKing },
+      { id: 'dolphin', name: 'Dolphin', price: 200, imageId: AssetIds.judges.dolphin },
     ],
   },
   {
@@ -95,12 +90,12 @@ export const JUDGES = [
     name: 'DJ',
     title: 'Chaos Curator',
     color: '#ffce24',
-    imageSrc: `${ASSET_BASE}characters/DJ.png`,
-    musicSrc: JUDGE_MUSIC_SRC.dj,
+    imageId: AssetIds.judges.djDefault,
+    musicId: AssetIds.music.dj,
     skins: [
-      { id: 'default', name: 'DJ', price: 0, imageSrc: `${ASSET_BASE}characters/DJ.png` },
-      { id: 'punk', name: 'Punk', price: 2000, imageSrc: `${ASSET_BASE}characters/Punk.png` },
-      { id: 'lab_coat', name: 'Lab Coat', price: 200, imageSrc: `${ASSET_BASE}characters/Lab_Coat.png` },
+      { id: 'default', name: 'DJ', price: 0, imageId: AssetIds.judges.djDefault },
+      { id: 'punk', name: 'Punk', price: 2000, imageId: AssetIds.judges.punk },
+      { id: 'lab_coat', name: 'Lab Coat', price: 200, imageId: AssetIds.judges.labCoat },
     ],
   },
 ]
@@ -164,10 +159,10 @@ const ELIMINATION_STAMP_GENERIC = [
 ]
 
 /** Map internal miss / fail caption to a punchy stamp for results / ELIMINATED overlay. */
-export function eliminationStamp(internalCause) {
+export function eliminationStamp(internalCause, rng = Math.random) {
   const pool = ELIMINATION_STAMP_POOLS[internalCause]
-  if (pool?.length) return pool[Math.floor(Math.random() * pool.length)]
-  return ELIMINATION_STAMP_GENERIC[Math.floor(Math.random() * ELIMINATION_STAMP_GENERIC.length)]
+  if (pool?.length) return randomChoice(rng, pool)
+  return randomChoice(rng, ELIMINATION_STAMP_GENERIC)
 }
 
 export const BOOST_PRODUCTS = [
@@ -190,7 +185,7 @@ export const STAGES = [
     kinds: ['tap'],
     difficulty: 0.08,
     judgeIndex: 0,
-    portraitSrc: `${ASSET_BASE}characters/BlingBeak.png`,
+    portraitId: AssetIds.stagePortraits.stage1,
   },
   {
     id: 2,
@@ -219,7 +214,7 @@ export const STAGES = [
     ],
     difficulty: 0.12,
     judgeIndex: 1,
-    portraitSrc: `${ASSET_BASE}characters/stage-sprites/ferret-default.png`,
+    portraitId: AssetIds.stagePortraits.stage2,
   },
   {
     id: 3,
@@ -249,7 +244,7 @@ export const STAGES = [
     ],
     difficulty: 0.16,
     judgeIndex: 2,
-    portraitSrc: `${ASSET_BASE}characters/stage-sprites/manatee-default.png`,
+    portraitId: AssetIds.stagePortraits.stage3,
   },
   {
     id: 4,
@@ -260,7 +255,7 @@ export const STAGES = [
     kinds: ['tap', 'slide', 'hold'],
     difficulty: 0.34,
     judgeIndex: 3,
-    portraitSrc: `${ASSET_BASE}characters/stage-sprites/lemur-default.png`,
+    portraitId: AssetIds.stagePortraits.stage4,
   },
   {
     id: 5,
@@ -271,7 +266,7 @@ export const STAGES = [
     kinds: ['tap', 'slide', 'hold'],
     difficulty: 0.56,
     judgeIndex: 0,
-    portraitSrc: `${ASSET_BASE}characters/stage-sprites/vulture-alt2.png`,
+    portraitId: AssetIds.stagePortraits.stage5,
   },
 ]
 

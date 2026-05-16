@@ -1,3 +1,5 @@
+import { AssetIds, JudgeImageUrls, StagePortraitUrls } from './assetIds.js'
+
 const ASSET_BASE = import.meta.env.BASE_URL
 
 export const IMAGE_ASSETS = {
@@ -80,6 +82,21 @@ export const MENU_MUSIC_URLS = [
   `${ASSET_BASE}audio/coolman_too_much_burrito.ogg`,
   `${ASSET_BASE}audio/dj_baby_baby_sped_up.ogg`,
 ]
+
+export const MUSIC_URLS_BY_ID = {
+  [AssetIds.music.blingbeak]: `${ASSET_BASE}audio/blingbeak_long_ride.ogg`,
+  [AssetIds.music.disco]: `${ASSET_BASE}audio/disco_ataca.ogg`,
+  [AssetIds.music.coolman]: `${ASSET_BASE}audio/coolman_too_much_burrito.ogg`,
+  [AssetIds.music.dj]: `${ASSET_BASE}audio/dj_baby_baby_sped_up.ogg`,
+}
+
+export const JUDGE_IMAGE_URLS_BY_ID = Object.fromEntries(
+  Object.entries(JudgeImageUrls).map(([id, path]) => [id, `${ASSET_BASE}${path}`]),
+)
+
+export const STAGE_PORTRAIT_URLS_BY_ID = Object.fromEntries(
+  Object.entries(StagePortraitUrls).map(([id, path]) => [id, `${ASSET_BASE}${path}`]),
+)
 
 /** SFX warmed at boot (FTUE run + results + common UI). */
 export const PRELOAD_SFX = [

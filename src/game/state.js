@@ -4,9 +4,9 @@ import {
   CONTINUE_HP_FRAC,
   CONTINUE_PROMPT_SECONDS,
   JUDGES,
-  STAGES,
-  LOGICAL_WIDTH,
   LOGICAL_HEIGHT,
+  LOGICAL_WIDTH,
+  STAGES,
   MAX_HP,
   betterGrade,
   coinsForResults,
@@ -15,10 +15,19 @@ import {
   rankForEndlessScore,
   skinsForJudge,
 } from './rules.js'
+import {
+  notifyRunCompleted,
+  requestRunMusic,
+  requestSave,
+  requestSound,
+  requestStopRunMusic,
+  requestToast,
+} from './events.js'
+import { createRandomSource } from './rng.js'
 
-const SAVE_KEY = 'brainRotOlympics:v1'
+export const SAVE_KEY = 'brainRotOlympics:v1'
 
-const DEFAULT_SAVE = {
+export const DEFAULT_SAVE = {
   ftueCompleted: false,
   coins: 0,
   highScore: 0,
@@ -34,8 +43,8 @@ const DEFAULT_SAVE = {
   },
 }
 
-export function createGameState(canvas, ctx, assets) {
-  const save = loadSave()
+export function createGameState(options = {}) {
+  const save = hydrateSave(options.save || {})
   for (const judge of JUDGES) {
     save.ownedSkins[judge.id] ??= ['default']
     save.equippedSkins[judge.id] ??= 'default'
@@ -49,12 +58,10 @@ export function createGameState(canvas, ctx, assets) {
   save.bankedExtraLife ??= 0
   save.doubleCoinsRunsRemaining ??= 0
   save.comboShieldRunsRemaining ??= 0
-  persistSave(save)
 
   const state = {
-    canvas,
-    ctx,
-    assets,
+    ctx: options.ctx || null,
+    assets: options.assets || null,
     time: 0,
     lastFrame: 0,
     deltaTime: 0,
@@ -62,6 +69,8 @@ export function createGameState(canvas, ctx, assets) {
     pointer: { x: LOGICAL_WIDTH / 2, y: LOGICAL_HEIGHT / 2, down: false },
     ui: { buttons: [] },
     save,
+    random: options.random || createRandomSource(options.seed),
+    events: [],
     run: null,
     effects: [],
     toast: null,
@@ -70,27 +79,13 @@ export function createGameState(canvas, ctx, assets) {
     boostSelectUseComboShield: true,
   }
 
+  persistSave(state)
+
   if (!save.ftueCompleted) {
     startStageRun(state, 1, { ftue: true })
   }
 
   return state
-}
-
-export function resizeCanvas(state) {
-  const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2))
-  state.canvas.width = Math.round(LOGICAL_WIDTH * dpr)
-  state.canvas.height = Math.round(LOGICAL_HEIGHT * dpr)
-  state.canvas.style.aspectRatio = `${LOGICAL_WIDTH} / ${LOGICAL_HEIGHT}`
-  state.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  state.ctx.imageSmoothingEnabled = true
-}
-
-export function setPointerFromEvent(state, event) {
-  const rect = state.canvas.getBoundingClientRect()
-  state.pointer.x = ((event.clientX - rect.left) / rect.width) * LOGICAL_WIDTH
-  state.pointer.y = ((event.clientY - rect.top) / rect.height) * LOGICAL_HEIGHT
-  state.pointer.down = event.type !== 'pointerup' && event.type !== 'pointercancel'
 }
 
 export function startStageRun(state, stageId, options = {}) {
@@ -123,7 +118,7 @@ export function startRun(state, options) {
   let useShield = Boolean(options.thisRunComboShield) && (state.save.comboShieldRunsRemaining || 0) > 0
   if (useDouble) state.save.doubleCoinsRunsRemaining -= 1
   if (useShield) state.save.comboShieldRunsRemaining -= 1
-  if (useDouble || useShield) persistSave(state.save)
+  if (useDouble || useShield) persistSave(state)
 
   state.run = {
     mode: options.mode,
@@ -179,7 +174,7 @@ export function startRun(state, options) {
   }
   state.screen = 'run'
   state.effects = []
-  state.assets.startMusic(judge, state.save.settings.music)
+  requestRunMusic(state, judge.id, state.save.settings.music)
 }
 
 export function finishRun(state, completed, cause = 'OUT OF SYNC', opts = {}) {
@@ -189,20 +184,21 @@ export function finishRun(state, completed, cause = 'OUT OF SYNC', opts = {}) {
   run.status = 'finished'
   run.completed = completed
   run.failed = !completed
-  run.lastMissCause = completed ? cause || 'STAGE CLEAR' : opts.alreadyStamped ? cause : eliminationStamp(cause)
+  run.lastMissCause = completed ? cause || 'STAGE CLEAR' : opts.alreadyStamped ? cause : eliminationStamp(cause, state.random)
   run.resultReadyAt = state.time + 1.2
   run.targets = []
   run.activeTargetId = null
   run.judgeMoodKind = completed ? 'hype' : 'eliminated'
   run.judgeMoodUntil = state.time + 120
-  state.assets.stopMusic()
+  requestStopRunMusic(state)
   if (completed) {
-    state.assets.playSfx('stageClear', state.save.settings.sfx)
-    state.assets.playSfx('judgeReactPositive', state.save.settings.sfx, 0.7)
+    requestSound(state, 'stageClear')
+    requestSound(state, 'judgeReactPositive', 0.7)
   } else if (!opts.skipScratch) {
-    state.assets.playSfx('runFailed', state.save.settings.sfx)
-    state.assets.playSfx('judgeReactNegative', state.save.settings.sfx, 0.75)
+    requestSound(state, 'runFailed')
+    requestSound(state, 'judgeReactNegative', 0.75)
   }
+  notifyRunCompleted(state, completed, run.lastMissCause)
 }
 
 export function openContinueOffer(state, internalCause, failSnapshot) {
@@ -214,13 +210,13 @@ export function openContinueOffer(state, internalCause, failSnapshot) {
   }
   run.status = 'continueOffer'
   run.continueOfferUntil = state.time + CONTINUE_PROMPT_SECONDS
-  run.continueDeclineCause = eliminationStamp(internalCause)
+  run.continueDeclineCause = eliminationStamp(internalCause, state.random)
   run.internalMissCause = internalCause
   run.failSnapshot = failSnapshot
   run.targets = []
   run.activeTargetId = null
-  state.assets.playSfx('hitMiss', state.save.settings.sfx)
-  state.assets.stopMusic()
+  requestSound(state, 'hitMiss')
+  requestStopRunMusic(state)
 }
 
 export function acceptContinue(state) {
@@ -231,14 +227,14 @@ export function acceptContinue(state) {
     return
   }
   state.save.coins -= CONTINUE_COST
-  persistSave(state.save)
+  persistSave(state)
   run.hp = Math.ceil(MAX_HP * CONTINUE_HP_FRAC)
   run.continueUsed = true
   run.status = 'playing'
   run.failSnapshot = null
   run.continueOfferUntil = 0
   run.nextSpawnAt = state.time + 0.75
-  state.assets.startMusic(JUDGES[run.activeJudgeIndex], state.save.settings.music)
+  requestRunMusic(state, JUDGES[run.activeJudgeIndex].id, state.save.settings.music)
 }
 
 export function declineContinue(state) {
@@ -307,13 +303,14 @@ export function applyRunResults(state) {
     }
   }
 
-  persistSave(state.save)
+  persistSave(state)
   run.resultsApplied = true
   run.failSnapshot = null
 }
 
 export function showToast(state, text) {
   state.toast = { text, until: state.time + 1.6 }
+  requestToast(state, text)
 }
 
 export function isSkinOwned(save, judgeId, skinId) {
@@ -332,12 +329,12 @@ export function buyOrEquipSkin(state, judgeId, skinId) {
     }
     state.save.coins -= skin.price
     state.save.ownedSkins[judgeId].push(skinId)
-    state.assets.playSfx('purchaseSuccess', state.save.settings.sfx)
+    requestSound(state, 'purchaseSuccess')
     showToast(state, `${skin.name} unlocked`)
   }
 
   state.save.equippedSkins[judgeId] = skinId
-  persistSave(state.save)
+  persistSave(state)
 }
 
 export function buyBoostProduct(state, productId) {
@@ -348,7 +345,7 @@ export function buyBoostProduct(state, productId) {
     return
   }
   state.save.coins -= product.price
-  state.assets.playSfx('purchaseSuccess', state.save.settings.sfx)
+  requestSound(state, 'purchaseSuccess')
   if (product.kind === 'bank') {
     state.save.bankedExtraLife = (state.save.bankedExtraLife || 0) + 1
     showToast(state, 'Extra life banked')
@@ -357,20 +354,15 @@ export function buyBoostProduct(state, productId) {
     state.save[key] = (state.save[key] || 0) + (product.charges || 0)
     showToast(state, `${product.name} added`)
   }
-  persistSave(state.save)
+  persistSave(state)
 }
 
-export function persistSave(save) {
-  localStorage.setItem(SAVE_KEY, JSON.stringify(save))
+export function persistSave(state) {
+  requestSave(state)
 }
 
-function loadSave() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(SAVE_KEY))
-    return mergeSave(DEFAULT_SAVE, parsed || {})
-  } catch {
-    return structuredClone(DEFAULT_SAVE)
-  }
+export function hydrateSave(incoming = {}) {
+  return mergeSave(DEFAULT_SAVE, incoming || {})
 }
 
 function mergeSave(base, incoming) {

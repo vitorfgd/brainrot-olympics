@@ -21,6 +21,8 @@ import {
 import { finishRun, openContinueOffer, persistSave } from './state.js'
 import { activeMoodForHit, inactiveCheerMood } from './judgeReactions.js'
 import { emitEffect } from './effects.js'
+import { requestRunMusic, requestSound, requestStopRunMusic } from './events.js'
+import { randomChoice, randomFloat } from './rng.js'
 
 const TARGET_RADIUS = 44
 const MISS_WINDOW = 0.35
@@ -58,7 +60,7 @@ export function updateRun(state) {
     const tick = Math.max(1, Math.ceil(run.startedAt - state.time))
     if (run.lastCountdownTick !== tick) {
       run.lastCountdownTick = tick
-      state.assets.playSfx('countdownTick', state.save.settings.sfx)
+      requestSound(state, 'countdownTick')
     }
     if (state.time >= run.startedAt) {
       run.status = 'playing'
@@ -66,7 +68,7 @@ export function updateRun(state) {
       run.goStartedAt = state.time
       run.goUntil = state.time + 0.62
       showCaption(state, run, 'GO!')
-      state.assets.playSfx('countdownTick', state.save.settings.sfx, 1.15)
+      requestSound(state, 'countdownTick', 1.15)
     }
     return
   }
@@ -88,12 +90,12 @@ export function updateRun(state) {
   const profile = difficultyProfile(run)
   const liveTargets = run.targets.filter((target) => !target.resolved).length
   if (state.time >= run.nextSpawnAt - SPAWN_PREVIEW_LEAD && liveTargets < profile.maxLiveTargets) {
-    prepareUpcomingTarget(run, profile, state.time)
+    prepareUpcomingTarget(run, profile, state.time, state.random)
   }
   if (state.time >= run.nextSpawnAt && liveTargets < profile.maxLiveTargets) {
-    const target = spawnTarget(run, profile)
+    const target = spawnTarget(run, profile, state.random)
     if (isFtueTapOpening(run) && target.id === 0) showCaption(state, run, 'TAP', 1.1)
-    state.assets.playSfx('targetSpawn', state.save.settings.sfx)
+    requestSound(state, 'targetSpawn')
     run.nextSpawnAt = state.time + profile.spawnInterval
   }
 
@@ -124,8 +126,8 @@ export function updateRun(state) {
     run.captionUntil = run.timeUpUntil
     run.targets = []
     run.activeTargetId = null
-    state.assets.stopMusic()
-    state.assets.playSfx(run.hp > 0 ? 'stageClear' : 'runFailed', state.save.settings.sfx, 0.85)
+    requestStopRunMusic(state)
+    requestSound(state, run.hp > 0 ? 'stageClear' : 'runFailed', 0.85)
   }
 
   if (run.timeUpUntil && state.time >= run.timeUpUntil) {
@@ -247,10 +249,10 @@ export function handleRunPointerUp(state) {
   run.activeTargetId = null
 }
 
-export function spawnTarget(run, profile) {
+export function spawnTarget(run, profile, rng = Math.random) {
   const upcoming = run.upcomingTarget
   const kind = upcoming?.kind || resolveTargetKind(run)
-  const point = upcoming?.point || chooseTargetPoint(run, kind)
+  const point = upcoming?.point || chooseTargetPoint(run, kind, rng)
   const target = {
     id: run.spawnCount,
     kind,
@@ -261,11 +263,11 @@ export function spawnTarget(run, profile) {
     deadline: profile.approach + MISS_WINDOW,
     resolved: false,
     removed: false,
-    pulse: Math.random() * Math.PI * 2,
+    pulse: randomFloat(rng, 0, Math.PI * 2),
   }
 
   if (kind === 'slide') {
-    const path = createSliderPath(point, profile, run)
+    const path = createSliderPath(point, profile, run, rng)
     Object.assign(target, path, {
       deadline: profile.approach + 1.35,
       tolerance: profile.slideTolerance,
@@ -296,12 +298,12 @@ function shouldShowHoldReleaseCue(target) {
   return target.heldFor >= target.holdDuration - HOLD_RELEASE_CUE_WINDOW
 }
 
-function prepareUpcomingTarget(run, profile, time) {
+function prepareUpcomingTarget(run, profile, time, rng = Math.random) {
   if (run.upcomingTarget) return
   const kind = resolveTargetKind(run)
   run.upcomingTarget = {
     kind,
-    point: chooseTargetPoint(run, kind),
+    point: chooseTargetPoint(run, kind, rng),
     createdAt: time,
     spawnAt: run.nextSpawnAt,
     approach: profile.approach,
@@ -328,9 +330,9 @@ function applyMood(state, run, mood) {
 
 function pingInactiveJudges(state, run) {
   if (run.mode !== 'endless') return
-  const cheer = inactiveCheerMood()
+  const cheer = inactiveCheerMood(state.random)
   const candidates = JUDGES.map((_, i) => i).filter((i) => i !== run.activeJudgeIndex)
-  const pick = candidates[Math.floor(Math.random() * candidates.length)]
+  const pick = randomChoice(state.random, candidates)
   run.inactiveMoods[pick] = { kind: cheer.kind, until: state.time + cheer.span }
 }
 
@@ -408,7 +410,7 @@ function resolveHit(state, target, quality, caption) {
     if (!forgiven && run.hp <= 0) {
       if ((state.save.bankedExtraLife || 0) > 0 && !run.extraLifeUsedThisRun) {
         state.save.bankedExtraLife -= 1
-        persistSave(state.save)
+        persistSave(state)
         run.extraLifeUsedThisRun = true
         const heal = MAX_HP - run.hp
         run.hp = MAX_HP
@@ -446,7 +448,7 @@ function resolveHit(state, target, quality, caption) {
     run.caption = milestoneCalloutText(nextCombo)
     run.captionUntil = state.time + 1.48
     run.milestoneFlashUntil = state.time + 0.2
-    state.assets.playSfx('judgeReactPositive', state.save.settings.sfx, 0.6)
+    requestSound(state, 'judgeReactPositive', 0.6)
   } else {
     playHitSfx(state, quality)
     run.caption = ftueHitCaption(run, quality, caption)
@@ -472,7 +474,7 @@ function ftueHitCaption(run, quality, fallback) {
 
 function playHitSfx(state, quality) {
   const key = quality === 'okay' || quality === 'shield' ? 'hitOkay' : quality === 'miss' ? 'hitMiss' : 'hitGood'
-  state.assets.playSfx(key, state.save.settings.sfx)
+  requestSound(state, key)
 }
 
 function applyHpDelta(state, run, delta) {
@@ -499,7 +501,7 @@ function updateEndlessJudge(state) {
   if (run.activeJudgeIndex !== nextJudgeIndex) {
     run.activeJudgeIndex = nextJudgeIndex
     applyMood(state, run, { kind: 'hype', span: 1.05 })
-    state.assets.startMusic(JUDGES[nextJudgeIndex], state.save.settings.music)
+    requestRunMusic(state, JUDGES[nextJudgeIndex].id, state.save.settings.music)
     showCaption(state, run, 'NEW JUDGE', 1.05)
   }
 }
@@ -519,15 +521,15 @@ function findTargetAt(run, x, y) {
   return null
 }
 
-function chooseTargetPoint(run, kind = null) {
+function chooseTargetPoint(run, kind = null, rng = Math.random) {
   if (run.ftue && run.stage?.id === 1 && run.spawnCount < FTUE_GUIDED_TAP_POINTS.length) {
     return FTUE_GUIDED_TAP_POINTS[run.spawnCount]
   }
   const region = judgeSpawnRegion(run)
-  let best = randomPointInRegion(region)
+  let best = randomPointInRegion(region, rng)
   let bestScore = -Infinity
   for (let i = 0; i < 16; i += 1) {
-    const point = randomPointInRegion(region)
+    const point = randomPointInRegion(region, rng)
     const nearest = nearestLiveTargetPoint(run, point, kind)
     if (nearest > bestScore) {
       best = point
@@ -550,10 +552,10 @@ function nearestLiveTargetPoint(run, point, kind) {
   return nearest
 }
 
-function randomPointInRegion(region) {
+function randomPointInRegion(region, rng = Math.random) {
   return {
-    x: region.minX + Math.random() * (region.maxX - region.minX),
-    y: region.minY + Math.random() * (region.maxY - region.minY),
+    x: randomFloat(rng, region.minX, region.maxX),
+    y: randomFloat(rng, region.minY, region.maxY),
   }
 }
 
@@ -568,16 +570,15 @@ function sliderPathLength(target, samples = 28) {
   return length
 }
 
-function createSliderPath(start, profile, run) {
+function createSliderPath(start, profile, run, rng = Math.random) {
   const idealGap = (SLIDE_MIN_ENDPOINT_GAP + SLIDE_MAX_ENDPOINT_GAP) / 2
   const idealArc = (SLIDE_MIN_ARC_LENGTH + SLIDE_MAX_ARC_LENGTH) / 2
   let bestPath = null
   let bestScore = -Infinity
   for (let i = 0; i < 48; i += 1) {
-    const targetLen =
-      SLIDE_MIN_ENDPOINT_GAP + Math.random() * (SLIDE_MAX_ENDPOINT_GAP - SLIDE_MIN_ENDPOINT_GAP)
+    const targetLen = randomFloat(rng, SLIDE_MIN_ENDPOINT_GAP, SLIDE_MAX_ENDPOINT_GAP)
     const direction = start.x < LOGICAL_WIDTH / 2 ? 1 : -1
-    const angle = (direction === 1 ? 0 : Math.PI) + (Math.random() - 0.5) * 0.52
+    const angle = (direction === 1 ? 0 : Math.PI) + randomFloat(rng, -0.5, 0.5) * 0.52
     const endX = clamp(start.x + Math.cos(angle) * targetLen, 70, LOGICAL_WIDTH - 70)
     const endY = clamp(start.y + Math.sin(angle) * targetLen, PLAY_TOP + 70, PLAY_BOTTOM - 70)
     const candidatePath = buildSliderPath(start, endX, endY)

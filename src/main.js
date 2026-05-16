@@ -1,13 +1,24 @@
 import './style.css'
 import { createAssetManager } from './game/assets.js'
-import { createGameState, resizeCanvas, setPointerFromEvent } from './game/state.js'
-import { updateGame, handlePointerDown, handlePointerMove, handlePointerUp } from './game/screens.js'
+import { createCanvasGameRenderer } from './game/canvasRenderer.js'
+import { LOGICAL_HEIGHT, LOGICAL_WIDTH } from './game/rules.js'
+import { createGameState } from './game/state.js'
+import { updateGame, handleGameCommand } from './game/screens.js'
 import { drawGame } from './game/render.js'
+import {
+  handleBrowserGameEvents,
+  loadBrowserSave,
+  pointerCommandFromEvent,
+  resizeBrowserCanvas,
+} from './platform/browser.js'
 
 const canvas = document.querySelector('#game')
 const ctx = canvas.getContext('2d')
 const assets = createAssetManager()
-const state = createGameState(canvas, ctx, assets)
+const renderer = createCanvasGameRenderer(ctx, LOGICAL_WIDTH, LOGICAL_HEIGHT, assets.images)
+const state = createGameState({ save: loadBrowserSave(), ctx, assets })
+state.gameRenderer = renderer
+handleBrowserGameEvents(state, assets)
 
 function frame(now) {
   const seconds = now / 1000
@@ -16,6 +27,7 @@ function frame(now) {
   state.time = seconds
 
   updateGame(state)
+  handleBrowserGameEvents(state, assets)
   drawGame(state)
   requestAnimationFrame(frame)
 }
@@ -24,27 +36,20 @@ function onPointer(event) {
   if (event.type === 'pointerdown' || event.type === 'pointercancel') {
     event.preventDefault()
   }
-  setPointerFromEvent(state, event)
+  const command = pointerCommandFromEvent(event, canvas)
 
   if (event.type === 'pointerdown') {
-    state.pointer.lastMoveX = state.pointer.x
-    state.pointer.lastMoveY = state.pointer.y
     canvas.setPointerCapture?.(event.pointerId)
-    handlePointerDown(state)
-  } else if (event.type === 'pointermove') {
-    handlePointerMove(state)
-  } else {
-    state.pointer.lastMoveX = null
-    state.pointer.lastMoveY = null
-    handlePointerUp(state)
   }
+  handleGameCommand(state, command)
+  handleBrowserGameEvents(state, assets)
 }
 
-window.addEventListener('resize', () => resizeCanvas(state))
+window.addEventListener('resize', () => resizeBrowserCanvas(canvas, ctx))
 canvas.addEventListener('pointerdown', onPointer)
 canvas.addEventListener('pointermove', onPointer)
 canvas.addEventListener('pointerup', onPointer)
 canvas.addEventListener('pointercancel', onPointer)
 
-resizeCanvas(state)
+resizeBrowserCanvas(canvas, ctx)
 requestAnimationFrame(frame)

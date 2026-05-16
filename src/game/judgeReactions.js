@@ -7,6 +7,6 @@ export function activeMoodForHit(quality, milestone) {
   return { kind: 'nod', span: 0.3 }
 }
 
-export function inactiveCheerMood() {
-  return Math.random() < 0.55 ? { kind: 'nod', span: 0.34 } : { kind: 'hype', span: 0.3 }
+export function inactiveCheerMood(rng = Math.random) {
+  return rng() < 0.55 ? { kind: 'nod', span: 0.34 } : { kind: 'hype', span: 0.3 }
 }

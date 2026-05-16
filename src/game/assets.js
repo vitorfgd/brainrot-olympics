@@ -1,11 +1,14 @@
 import { JUDGES, STAGES } from './rules.js'
 import {
   IMAGE_ASSETS,
+  JUDGE_IMAGE_URLS_BY_ID,
   MENU_MUSIC_URLS,
+  MUSIC_URLS_BY_ID,
   PRELOAD_SFX,
   SFX_POOL_SIZES,
   SFX_URLS,
   SFX_VOLUMES,
+  STAGE_PORTRAIT_URLS_BY_ID,
 } from './assetsManifest.js'
 
 const RUN_MUSIC_VOLUME = 0.18
@@ -37,7 +40,7 @@ export function createAssetManager() {
     return audioByUrl.get(url)
   }
 
-  const allMusicUrls = [...new Set([...MENU_MUSIC_URLS, ...JUDGES.map((judge) => judge.musicSrc)])]
+  const allMusicUrls = [...new Set([...MENU_MUSIC_URLS, ...JUDGES.map((judge) => MUSIC_URLS_BY_ID[judge.musicId])])]
   for (const url of allMusicUrls) preloadAudio(url)
 
   const menuPlaylist = MENU_MUSIC_URLS.map((url) => audioForUrl(url))
@@ -49,13 +52,14 @@ export function createAssetManager() {
   for (const judge of JUDGES) {
     judgeImages[judge.id] = {}
     for (const skin of judge.skins) {
-      judgeImages[judge.id][skin.id] = loadImage(skin.imageSrc)
+      judgeImages[judge.id][skin.id] = loadImage(JUDGE_IMAGE_URLS_BY_ID[skin.imageId])
     }
-    if (!music.has(judge.musicSrc)) music.set(judge.musicSrc, audioForUrl(judge.musicSrc))
+    const musicUrl = MUSIC_URLS_BY_ID[judge.musicId]
+    if (!music.has(judge.musicId)) music.set(judge.musicId, audioForUrl(musicUrl))
   }
 
   for (const stage of STAGES) {
-    if (stage.portraitSrc) stagePortraits[stage.id] = loadImage(stage.portraitSrc)
+    if (stage.portraitId) stagePortraits[stage.id] = loadImage(STAGE_PORTRAIT_URLS_BY_ID[stage.portraitId])
   }
 
   for (const name of PRELOAD_SFX) {
@@ -206,7 +210,7 @@ export function createAssetManager() {
     startMusic(judge, enabled) {
       if (!enabled) return
       stopMenuMusic()
-      const next = music.get(judge.musicSrc)
+      const next = music.get(judge.musicId)
       if (!next) return
       const previous = activeAudio
       if (previous && previous !== next) {

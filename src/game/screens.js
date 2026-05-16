@@ -1,4 +1,5 @@
 import { JUDGES, STAGES, gradeRank, isEndlessUnlocked, isStageUnlocked } from './rules.js'
+import { applyInputCommandToPointer } from './commands.js'
 import {
   acceptContinue,
   applyRunResults,
@@ -14,6 +15,15 @@ import {
 } from './state.js'
 import { handleRunPointerDown, handleRunPointerMove, handleRunPointerUp, updateRun } from './targets.js'
 import { applyQueuedEffects } from './effects.js'
+import {
+  notifyScreenChanged,
+  requestAudioUnlock,
+  requestMenuMusic,
+  requestMusicSettingsSync,
+  requestSound,
+  requestStopMenuMusic,
+} from './events.js'
+import { buildRenderState } from './renderState.js'
 
 export function updateGame(state) {
   updateRun(state)
@@ -36,10 +46,19 @@ export function updateGame(state) {
 
   updateResultsSfx(state)
   syncMenuMusic(state)
+  updateScreenEvent(state)
+  state.renderState = buildRenderState(state)
+}
+
+export function handleGameCommand(state, command) {
+  applyInputCommandToPointer(state, command)
+  if (command.type === 'pointerDown') handlePointerDown(state)
+  else if (command.type === 'pointerMove') handlePointerMove(state)
+  else if (command.type === 'pointerUp' || command.type === 'pointerCancel') handlePointerUp(state)
 }
 
 export function handlePointerDown(state) {
-  state.assets.unlockAudio?.()
+  requestAudioUnlock(state)
   const button = findButton(state)
 
   if (state.screen === 'run' && state.run?.status === 'continueOffer') {
@@ -122,7 +141,7 @@ export function handlePointerDown(state) {
   if (button.id === 'back' || button.id === 'resultsHome') {
     if (state.screen === 'results' && state.run?.ftue && state.run.completed) {
       state.save.ftueCompleted = true
-      persistSave(state.save)
+      persistSave(state)
     }
     state.screen = 'home'
     return
@@ -153,8 +172,8 @@ export function handlePointerDown(state) {
     const enabled = !state.save.settings.music
     playToggleClick(state, enabled)
     state.save.settings.music = enabled
-    state.assets.setMusicEnabled(state.save.settings.music)
-    persistSave(state.save)
+    requestMusicSettingsSync(state, state.save.settings.music)
+    persistSave(state)
     showToast(state, `Music ${state.save.settings.music ? 'on' : 'off'}`)
     return
   }
@@ -162,7 +181,7 @@ export function handlePointerDown(state) {
     const enabled = !state.save.settings.sfx
     if (!enabled) playToggleClick(state, enabled)
     state.save.settings.sfx = enabled
-    persistSave(state.save)
+    persistSave(state)
     if (enabled) playToggleClick(state, enabled)
     showToast(state, `SFX ${state.save.settings.sfx ? 'on' : 'off'}`)
     return
@@ -174,7 +193,7 @@ export function handlePointerDown(state) {
       if (canAdvance) {
         if (run.ftue) {
           state.save.ftueCompleted = true
-          persistSave(state.save)
+          persistSave(state)
         }
         const nextId = run.stage.id + 1
         if (nextId <= STAGES.length) {
@@ -191,7 +210,7 @@ export function handlePointerDown(state) {
   }
   if (button.id === 'ftueNextStage') {
     state.save.ftueCompleted = true
-    persistSave(state.save)
+    persistSave(state)
     beginRunWithBoostFlow(state, { kind: 'stage', stageId: 2, ftue: false })
     return
   }
@@ -226,15 +245,15 @@ function findButton(state) {
 }
 
 function playClick(state) {
-  state.assets.playSfx('click', state.save.settings.sfx)
+  requestSound(state, 'click')
 }
 
 function playCancelClick(state) {
-  state.assets.playSfx('cancelClick', state.save.settings.sfx)
+  requestSound(state, 'cancelClick')
 }
 
 function playToggleClick(state, enabled) {
-  state.assets.playSfx(enabled ? 'click' : 'cancelClick', state.save.settings.sfx)
+  requestSound(state, enabled ? 'click' : 'cancelClick')
 }
 
 function isCancelButton(id) {
@@ -246,8 +265,8 @@ function isToggleButton(id) {
 }
 
 function syncMenuMusic(state) {
-  if (isMenuMusicScreen(state.screen)) state.assets.startMenuMusic(state.save.settings.music)
-  else state.assets.stopMenuMusic()
+  if (isMenuMusicScreen(state.screen)) requestMenuMusic(state, state.save.settings.music)
+  else requestStopMenuMusic(state)
 }
 
 function isMenuMusicScreen(screen) {
@@ -270,6 +289,12 @@ function updateResultsSfx(state) {
 function playResultSfxAt(state, run, elapsed, id, at, sfx) {
   if (run.resultsSfx[id] || elapsed < at) return
   run.resultsSfx[id] = true
-  state.assets.playSfx(sfx, state.save.settings.sfx)
+  requestSound(state, sfx)
+}
+
+function updateScreenEvent(state) {
+  if (state.eventedScreen === state.screen) return
+  state.eventedScreen = state.screen
+  notifyScreenChanged(state, state.screen)
 }
 

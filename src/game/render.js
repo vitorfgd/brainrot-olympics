@@ -593,8 +593,12 @@ function drawNeonPlayTriangle(ctx, cx, cy, r, color, enabled) {
 
 function drawLeaderboard(state) {
   const ctx = state.ctx
-  ctx.fillStyle = 'rgba(5, 4, 28, 0.22)'
-  ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+  const renderer = state.gameRenderer
+  if (renderer) renderer.drawRect('rgba(5, 4, 28, 0.22)', 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+  else {
+    ctx.fillStyle = 'rgba(5, 4, 28, 0.22)'
+    ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+  }
   drawRoundTealBackButton(state, 48, 56, 36)
   drawOutlinedText(ctx, 'LEADERBOARD', LOGICAL_WIDTH / 2, 68, 34, '#fce76d', '#5e315f', 'center', 1000, 4)
 
@@ -776,23 +780,29 @@ function drawShopCosmeticCard(state, item, x, y) {
 
 function drawSettings(state) {
   const ctx = state.ctx
+  const renderer = state.gameRenderer
   drawRoundTealBackButton(state, 48, 56, 36)
 
-  ctx.save()
-  ctx.fillStyle = 'rgba(18, 9, 54, 0.76)'
-  roundRect(ctx, 46, 286, 448, 356, 28)
-  ctx.fill()
-  ctx.strokeStyle = '#a8fbff'
-  ctx.lineWidth = 3
-  roundRect(ctx, 46, 286, 448, 356, 28)
-  ctx.stroke()
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)'
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.moveTo(78, 384)
-  ctx.lineTo(462, 384)
-  ctx.stroke()
-  ctx.restore()
+  if (renderer) {
+    renderer.drawRoundedRect('rgba(18, 9, 54, 0.76)', '#a8fbff', 3, 46, 286, 448, 356, 28)
+    renderer.drawLine('rgba(255,255,255,0.35)', 2, 78, 384, 462, 384)
+  } else {
+    ctx.save()
+    ctx.fillStyle = 'rgba(18, 9, 54, 0.76)'
+    roundRect(ctx, 46, 286, 448, 356, 28)
+    ctx.fill()
+    ctx.strokeStyle = '#a8fbff'
+    ctx.lineWidth = 3
+    roundRect(ctx, 46, 286, 448, 356, 28)
+    ctx.stroke()
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(78, 384)
+    ctx.lineTo(462, 384)
+    ctx.stroke()
+    ctx.restore()
+  }
 
   drawOutlinedText(ctx, 'AUDIO', LOGICAL_WIDTH / 2, 336, 30, '#fce76d', '#5e315f', 'center', 1000, 4)
   drawSettingsToggleRow(state, 'toggleMusic', 78, 432, 'iconMusic', 'MUSIC', state.save.settings.music)
@@ -804,26 +814,32 @@ function drawSettings(state) {
 
 function drawSettingsToggleRow(state, id, x, y, icon, label, enabled) {
   const ctx = state.ctx
+  const renderer = state.gameRenderer
   const w = 384
   const h = 62
   const border = enabled ? '#a8fbff' : HOT_PINK
   const valueColor = enabled ? '#5cff7b' : SOFT_PINK
 
-  ctx.save()
-  ctx.fillStyle = 'rgba(18, 9, 54, 0.78)'
-  roundRect(ctx, x, y, w, h, 31)
-  ctx.fill()
-  ctx.strokeStyle = border
-  ctx.lineWidth = 3
-  roundRect(ctx, x, y, w, h, 31)
-  ctx.stroke()
-  ctx.strokeStyle = 'rgba(255,255,255,0.42)'
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.moveTo(x + 76, y + 10)
-  ctx.lineTo(x + 76, y + h - 10)
-  ctx.stroke()
-  ctx.restore()
+  if (renderer) {
+    renderer.drawRoundedRect('rgba(18, 9, 54, 0.78)', border, 3, x, y, w, h, 31)
+    renderer.drawLine('rgba(255,255,255,0.42)', 2, x + 76, y + 10, x + 76, y + h - 10)
+  } else {
+    ctx.save()
+    ctx.fillStyle = 'rgba(18, 9, 54, 0.78)'
+    roundRect(ctx, x, y, w, h, 31)
+    ctx.fill()
+    ctx.strokeStyle = border
+    ctx.lineWidth = 3
+    roundRect(ctx, x, y, w, h, 31)
+    ctx.stroke()
+    ctx.strokeStyle = 'rgba(255,255,255,0.42)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(x + 76, y + 10)
+    ctx.lineTo(x + 76, y + h - 10)
+    ctx.stroke()
+    ctx.restore()
+  }
 
   drawIconFit(ctx, state.assets.images[icon], x + 18, y + 13, 38, 36)
   drawOutlinedText(ctx, label, x + 96, y + h / 2, 25, border, '#2d1648', 'left', 1000, 3)
@@ -1654,6 +1670,7 @@ function drawSliderSegment(ctx, target, endProgress) {
 
 function drawLeaderboardRow(state, row, rank, displayIndex, y, h) {
   const ctx = state.ctx
+  const renderer = state.gameRenderer
   const colors = ['#fce76d', SOFT_PINK, '#7cff5b', '#a8fbff', '#a8fbff', '#a8fbff', '#a8fbff', '#a8fbff', '#a8fbff', '#a8fbff']
   const color = colors[rank - 1] || '#a8fbff'
   const enter = delayedReveal(screenElapsed(state), displayIndex * 0.035, 0.26)
@@ -1663,22 +1680,29 @@ function drawLeaderboardRow(state, row, rank, displayIndex, y, h) {
   const midY = y + h / 2
   ctx.save()
   ctx.globalAlpha *= enter
-  ctx.shadowBlur = 0
-  ctx.fillStyle = 'rgba(18, 9, 54, 0.86)'
-  roundRect(ctx, x, y, w, h, h / 2)
-  ctx.fill()
-  ctx.strokeStyle = color
-  ctx.lineWidth = rank <= 3 ? 4 : 3
-  ctx.stroke()
-  ctx.shadowBlur = 0
+  if (renderer) {
+    renderer.drawRoundedRect('rgba(18, 9, 54, 0.86)', color, rank <= 3 ? 4 : 3, x, y, w, h, h / 2)
+  } else {
+    ctx.shadowBlur = 0
+    ctx.fillStyle = 'rgba(18, 9, 54, 0.86)'
+    roundRect(ctx, x, y, w, h, h / 2)
+    ctx.fill()
+    ctx.strokeStyle = color
+    ctx.lineWidth = rank <= 3 ? 4 : 3
+    ctx.stroke()
+    ctx.shadowBlur = 0
+  }
 
   drawOutlinedText(ctx, `#${rank}`, 56, midY, rank >= 10 ? 24 : 26, color, '#24124f', 'left', 1000, 3)
-  ctx.strokeStyle = 'rgba(255,255,255,0.52)'
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.moveTo(128, y + 11)
-  ctx.lineTo(128, y + h - 11)
-  ctx.stroke()
+  if (renderer) renderer.drawLine('rgba(255,255,255,0.52)', 2, 128, y + 11, 128, y + h - 11)
+  else {
+    ctx.strokeStyle = 'rgba(255,255,255,0.52)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(128, y + 11)
+    ctx.lineTo(128, y + h - 11)
+    ctx.stroke()
+  }
   drawOutlinedText(ctx, row.name, 146, midY, row.name.length > 14 ? 18 : 21, color, '#24124f', 'left', 1000, 3)
   drawOutlinedText(ctx, formatScore(row.score), 440, midY, 22, rank <= 3 ? SOFT_PINK : '#fce76d', '#24124f', 'right', 1000, 3)
   drawLeaderboardPortrait(state, row, 480, midY, color, 27)
@@ -1687,6 +1711,7 @@ function drawLeaderboardRow(state, row, rank, displayIndex, y, h) {
 
 function drawLeaderboardPlayerRow(state, score, rank, y, h = 64, displayIndex = 0) {
   const ctx = state.ctx
+  const renderer = state.gameRenderer
   const judge = JUDGES[1]
   const row = { judgeId: judge.id, skinId: state.save.equippedSkins[judge.id] || 'default' }
   const enter = delayedReveal(screenElapsed(state), displayIndex * 0.035, 0.26)
@@ -1697,12 +1722,16 @@ function drawLeaderboardPlayerRow(state, score, rank, y, h = 64, displayIndex = 
   ctx.globalAlpha *= enter
   ctx.shadowColor = HOT_PINK
   ctx.shadowBlur = 8 + pulse * 10
-  ctx.fillStyle = 'rgba(68, 10, 62, 0.86)'
-  roundRect(ctx, 38, y, 464, h, h / 2)
-  ctx.fill()
-  ctx.strokeStyle = HOT_PINK
-  ctx.lineWidth = 4
-  ctx.stroke()
+  if (renderer) {
+    renderer.drawRoundedRect('rgba(68, 10, 62, 0.86)', HOT_PINK, 4, 38, y, 464, h, h / 2)
+  } else {
+    ctx.fillStyle = 'rgba(68, 10, 62, 0.86)'
+    roundRect(ctx, 38, y, 464, h, h / 2)
+    ctx.fill()
+    ctx.strokeStyle = HOT_PINK
+    ctx.lineWidth = 4
+    ctx.stroke()
+  }
   ctx.shadowBlur = 0
   drawOutlinedText(ctx, `YOU - #${rank}`, 56, midY, rank >= 10 ? 27 : 30, '#ffe8ff', '#4a123c', 'left', 1000, 4)
   drawOutlinedText(ctx, formatScore(score), 440, midY, 24, '#ffe8ff', '#4a123c', 'right', 1000, 3)
