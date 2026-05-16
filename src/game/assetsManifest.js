@@ -87,8 +87,6 @@ export const PRELOAD_SFX = [
   'hitGood',
   'hitOkay',
   'hitMiss',
-  'combo10',
-  'combo25Plus',
   'judgeReactPositive',
   'judgeReactNegative',
   'stageClear',

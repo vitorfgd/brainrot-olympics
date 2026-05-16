@@ -23,7 +23,10 @@ import { emitEffect } from './effects.js'
 const TARGET_RADIUS = 44
 const MISS_WINDOW = 0.35
 const SPAWN_PREVIEW_LEAD = 0.56
-const SLIDE_OFF_PATH_GRACE = 0.28
+const SLIDE_OFF_PATH_GRACE = 0.42
+const SLIDE_START_RADIUS_BONUS = 22
+const SLIDE_END_RADIUS_MULT = 1.5
+const SLIDE_END_MIN_PROGRESS = 0.5
 const HOLD_RELEASE_CUE_WINDOW = 0.24
 const FTUE_GUIDED_TAP_POINTS = [
   { x: 270, y: 472 },
@@ -122,7 +125,7 @@ export function handleRunPointerDown(state) {
   if (!target) return false
 
   if (target.kind === 'slide') {
-    if (distance(x, y, target.x, target.y) > TARGET_RADIUS + 14) {
+    if (distance(x, y, target.x, target.y) > TARGET_RADIUS + SLIDE_START_RADIUS_BONUS) {
       resolveHit(state, target, 'miss', 'START ON THE DOT')
       return true
     }
@@ -169,7 +172,10 @@ export function handleRunPointerMove(state) {
   target.trail.push({ x: state.pointer.x, y: state.pointer.y })
   if (target.trail.length > 18) target.trail.shift()
 
-  if (distance(state.pointer.x, state.pointer.y, target.endX, target.endY) <= TARGET_RADIUS * 1.25 && target.progress > 0.6) {
+  if (
+    distance(state.pointer.x, state.pointer.y, target.endX, target.endY) <= TARGET_RADIUS * SLIDE_END_RADIUS_MULT
+    && target.progress > SLIDE_END_MIN_PROGRESS
+  ) {
     const quality = qualityFromTiming(target.age - target.approach)
     resolveHit(state, target, quality, quality === 'miss' ? 'OFF BEAT' : `${HIT_LABELS[quality]} SLIDE`)
     run.activeTargetId = null
@@ -397,7 +403,6 @@ function resolveHit(state, target, quality, caption) {
     run.caption = milestoneCalloutText(nextCombo)
     run.captionUntil = state.time + 1.48
     run.milestoneFlashUntil = state.time + 0.2
-    state.assets.playSfx(nextCombo === 10 ? 'combo10' : 'combo25Plus', state.save.settings.sfx)
     state.assets.playSfx('judgeReactPositive', state.save.settings.sfx, 0.6)
   } else {
     playHitSfx(state, quality)
@@ -462,7 +467,7 @@ function findTargetAt(run, x, y) {
     if (target.resolved) continue
     if (target.kind === 'slide') {
       const start = distance(x, y, target.x, target.y) <= TARGET_RADIUS + 16
-      const path = nearestSliderProgress(target, x, y).distance <= target.tolerance + 10
+      const path = nearestSliderProgress(target, x, y).distance <= target.tolerance + 18
       if (start || path) return target
     } else if (distance(x, y, target.x, target.y) <= TARGET_RADIUS + 20) {
       return target

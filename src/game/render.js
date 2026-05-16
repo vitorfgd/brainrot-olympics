@@ -617,7 +617,7 @@ function drawShop(state) {
 
   drawOutlinedText(ctx, 'POWER-UPS', LOGICAL_WIDTH / 2, 320, 34, '#ffffff', '#234b61', 'center', 1000, 4)
   drawPowerUpRow(state, BOOST_PRODUCTS[0], 38, 358, HOT_PINK, 'iconHeart', 'EXTRA LIFE')
-  drawPowerUpRow(state, BOOST_PRODUCTS[1], 38, 414, '#fce76d', 'iconCoin', 'DOUBLE COINS BOOST')
+  drawPowerUpRow(state, BOOST_PRODUCTS[1], 38, 414, '#fce76d', 'iconCoin', 'DOUBLE COINS')
   drawPowerUpRow(state, BOOST_PRODUCTS[2], 38, 470, '#a8fbff', 'iconShield', 'COMBO SHIELD')
 
   drawOutlinedText(ctx, 'COSMETICS', LOGICAL_WIDTH / 2, 560, 34, '#ffffff', '#234b61', 'center', 1000, 4)
@@ -885,9 +885,10 @@ function drawResults(state) {
   if (elapsed < 1.22) return
   if (run.ftue) {
     if (run.completed) {
-      drawOutlinedText(ctx, 'LEVELS UNLOCKED', cx, 718, 25, '#a8fbff', '#234b61', 'center', 1000, 4)
-      drawText(ctx, 'Next: Slide Lesson', cx, 748, 18, '#fce76d', 'center', 900)
-      drawSpriteButton(state, 'ftueContinue', RESULTS_LAYOUT.retryButton.x, 794, RESULTS_LAYOUT.retryButton.w, RESULTS_LAYOUT.retryButton.h, 'buttonCyan', ftueResultButtonLabel(run), null)
+      const unlockY = nextY + 28
+      drawOutlinedText(ctx, 'LEVELS UNLOCKED', cx, unlockY, 25, '#a8fbff', '#234b61', 'center', 1000, 4)
+      drawText(ctx, 'Next: Slide Lesson', cx, unlockY + 30, 18, '#fce76d', 'center', 900)
+      drawSpriteButton(state, 'ftueContinue', RESULTS_LAYOUT.retryButton.x, unlockY + 76, RESULTS_LAYOUT.retryButton.w, RESULTS_LAYOUT.retryButton.h, 'buttonCyan', ftueResultButtonLabel(run), null)
       return
     }
     drawSpriteButton(state, 'ftueContinue', RESULTS_LAYOUT.retryButton.x, 674, RESULTS_LAYOUT.retryButton.w, RESULTS_LAYOUT.retryButton.h, 'buttonPink', ftueResultButtonLabel(run), null)
@@ -1506,7 +1507,7 @@ function drawLeaderboardPortrait(state, row, x, y, color, r = 21) {
 function leaderboardRows() {
   return [
     { name: 'Sir Brave-Heart', score: 98100, judgeId: 'blingbeak', skinId: 'partyhat' },
-    { name: 'Lady Chaos-Bringer', score: 95500, judgeId: 'disco', skinId: 'disco' },
+    { name: 'Chaos-Bringer', score: 95500, judgeId: 'disco', skinId: 'disco' },
     { name: 'Shadow-Stalker', score: 92200, judgeId: 'coolman', skinId: 'default' },
     { name: 'Pixel-Champion', score: 89800, judgeId: 'dj', skinId: 'default' },
     { name: 'Chaos-Master', score: 87000, judgeId: 'blingbeak', skinId: 'maverick' },

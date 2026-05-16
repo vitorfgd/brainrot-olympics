@@ -278,7 +278,7 @@ export function difficultyProfile(run) {
       ramp,
       spawnInterval: lerp(1.3, 0.56, ramp),
       approach: lerp(1.22, 0.66, ramp),
-      slideTolerance: lerp(64, 48, ramp),
+      slideTolerance: lerp(78, 60, ramp),
       holdDuration: lerp(0.82, 1.05, ramp),
       maxLiveTargets: 1,
     }
@@ -291,7 +291,7 @@ export function difficultyProfile(run) {
     ramp,
     spawnInterval: lerp(1.25, 0.52, ramp),
     approach: lerp(1.18, 0.62, ramp),
-    slideTolerance: lerp(68, 44, ramp),
+    slideTolerance: lerp(82, 58, ramp),
     holdDuration: lerp(0.82, 1.28, ramp),
     maxLiveTargets: run.mode === 'stage' && run.stage?.id < 5 ? 1 : Math.min(1 + Math.floor(ramp * 3), 4),
   }
