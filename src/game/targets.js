@@ -14,7 +14,6 @@ import {
   scoreForHit,
   COMBO_MILESTONE_AT,
   milestoneCalloutText,
-  hitThemeById,
   JUDGES,
 } from './rules.js'
 import { finishRun, openContinueOffer, persistSave } from './state.js'
@@ -40,12 +39,7 @@ export function updateRun(state) {
 
   if (run.status !== 'playing') return
 
-  if (run.paused) {
-    run.pauseAccum += state.deltaTime
-  }
-  run.elapsed = state.time - run.startedAt - run.pauseAccum
-
-  if (run.paused) return
+  run.elapsed = state.time - run.startedAt
 
   updateEndlessJudge(state)
 
@@ -73,7 +67,11 @@ export function updateRun(state) {
     }
   }
 
-  run.targets = run.targets.filter((target) => target.age < target.deadline + 0.35 && !target.removed)
+  run.targets = run.targets.filter((target) => {
+    if (target.removed) return false
+    if (target.removeAt && state.time >= target.removeAt) return false
+    return target.age < target.deadline + 0.35
+  })
 
   if (run.mode === 'stage' && run.elapsed >= run.duration) {
     finishRun(state, run.hp > 0, run.hp > 0 ? 'STAGE CLEAR' : 'NO HP')
@@ -82,7 +80,7 @@ export function updateRun(state) {
 
 export function handleRunPointerDown(state) {
   const run = state.run
-  if (!run || run.status !== 'playing' || run.paused) return false
+  if (!run || run.status !== 'playing') return false
   const { x, y } = state.pointer
 
   const target = findTargetAt(run, x, y)
@@ -115,7 +113,7 @@ export function handleRunPointerDown(state) {
 
 export function handleRunPointerMove(state) {
   const run = state.run
-  if (!run || run.status !== 'playing' || run.paused || run.activeTargetId === null) return
+  if (!run || run.status !== 'playing' || run.activeTargetId === null) return
 
   const target = run.targets.find((item) => item.id === run.activeTargetId)
   if (!target || target.resolved || target.kind !== 'slide') return
@@ -145,7 +143,7 @@ export function handleRunPointerMove(state) {
 
 export function handleRunPointerUp(state) {
   const run = state.run
-  if (!run || run.status !== 'playing' || run.paused || run.activeTargetId === null) return
+  if (!run || run.status !== 'playing' || run.activeTargetId === null) return
 
   const target = run.targets.find((item) => item.id === run.activeTargetId)
   if (!target || target.resolved) {
@@ -231,7 +229,7 @@ function pingInactiveJudges(state, run) {
   run.inactiveMoods[pick] = { kind: cheer.kind, until: state.time + cheer.span }
 }
 
-function snapshotFatalTarget(target, themeId) {
+function snapshotFatalTarget(target) {
   const snap = {
     kind: target.kind,
     x: target.x,
@@ -239,7 +237,6 @@ function snapshotFatalTarget(target, themeId) {
     age: target.age,
     approach: target.approach,
     deadline: target.deadline,
-    themeId,
     pulse: target.pulse || 0,
   }
   if (target.kind === 'slide') {
@@ -271,6 +268,8 @@ function resolveHit(state, target, quality, caption) {
     run.comboShieldConsumed = true
     target.resolved = true
     target.removed = false
+    target.vanishStartedAt = state.time
+    target.removeAt = state.time + 0.18
     run.resolvedNotes += 1
     run.hitCounts[quality] += 1
     run.accuracyPoints += HIT_QUALITY_VALUE[quality]
@@ -281,7 +280,9 @@ function resolveHit(state, target, quality, caption) {
   }
 
   target.resolved = true
-  target.removed = quality !== 'miss'
+  target.removed = false
+  target.vanishStartedAt = state.time
+  target.removeAt = state.time + 0.18
   run.resolvedNotes += 1
   run.hitCounts[quality] += 1
   run.accuracyPoints += HIT_QUALITY_VALUE[quality]
@@ -302,7 +303,7 @@ function resolveHit(state, target, quality, caption) {
         showCaption(state, run, 'EXTRA LIFE!', 1.1)
         return
       }
-      const snap = snapshotFatalTarget(target, state.save.equippedHitTheme)
+      const snap = snapshotFatalTarget(target)
       openContinueOffer(state, caption, snap)
     }
     return
@@ -311,6 +312,11 @@ function resolveHit(state, target, quality, caption) {
   const nextCombo = run.combo + 1
   const gained = scoreForHit(quality, nextCombo)
   run.score += gained
+  if (quality === 'okay' || quality === 'perfect') {
+    run.shakeStartedAt = state.time
+    run.shakeUntil = state.time + (quality === 'perfect' ? 0.18 : 0.11)
+    run.shakeMagnitude = quality === 'perfect' ? 8 : 4
+  }
   run.combo = nextCombo
   run.bestCombo = Math.max(run.bestCombo, run.combo)
   run.hp = clamp(run.hp + hpDeltaForHit(quality), 0, MAX_HP)
@@ -320,10 +326,7 @@ function resolveHit(state, target, quality, caption) {
   applyMood(state, run, milestoneMood)
   pingInactiveJudges(state, run)
 
-  const theme = hitThemeById(state.save.equippedHitTheme)
-  const burstColor = theme.burst[quality] || theme.burst.okay
-  const baseCount = quality === 'perfect' ? 18 : 10
-  burst(state, target.x, target.y, burstColor, baseCount, theme, isMilestone)
+  spawnHitFirework(state, target.x, target.y, quality, isMilestone)
 
   if (isMilestone) {
     run.caption = milestoneCalloutText(nextCombo)
@@ -415,21 +418,16 @@ function nearestSliderProgress(target, x, y) {
   return best
 }
 
-function burst(state, x, y, color, count, theme, milestoneExtra) {
-  const scale = milestoneExtra ? theme.milestoneBurstScale : 1
-  const n = Math.max(4, Math.round(count * scale))
-  for (let i = 0; i < n; i += 1) {
-    const angle = Math.random() * Math.PI * 2
-    const speed = (80 + Math.random() * 210) * (milestoneExtra ? 1.08 : 1)
-    state.particles.push({
-      x,
-      y,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      size: (4 + Math.random() * 7) * (milestoneExtra ? 1.12 : 1),
-      color,
-      age: 0,
-      life: 0.5 + Math.random() * 0.25,
-    })
-  }
+function spawnHitFirework(state, x, y, quality, milestoneExtra) {
+  state.fireworks ??= []
+  const baseSize = quality === 'perfect' ? 190 : quality === 'good' ? 158 : 132
+  state.fireworks.push({
+    x,
+    y,
+    size: baseSize * (milestoneExtra ? 1.22 : 1),
+    age: 0,
+    life: quality === 'perfect' ? 0.86 : 0.72,
+    alpha: quality === 'okay' ? 0.78 : 0.96,
+    hit: true,
+  })
 }

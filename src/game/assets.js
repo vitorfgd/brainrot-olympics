@@ -8,13 +8,13 @@ const IMAGE_ASSETS = {
   shopLogo: `${ASSET_BASE}ui/shop-logo.png`,
   shopMan: `${ASSET_BASE}ui/shop-man.png`,
   medalsSheet: `${ASSET_BASE}ui/medals-sheet.png`,
+  fireworkSheet: `${ASSET_BASE}ui/firework-sheet.png`,
   confettiLayer1: `${ASSET_BASE}ui/confetti-layer-1.png`,
   confettiLayer2: `${ASSET_BASE}ui/confetti-layer-2.png`,
   confettiLayer3: `${ASSET_BASE}ui/confetti-layer-3.png`,
   buttonPink: `${ASSET_BASE}ui/button-pink-wide.png`,
   buttonGold: `${ASSET_BASE}ui/button-gold-wide.png`,
   buttonCyan: `${ASSET_BASE}ui/button-cyan-wide.png`,
-  buttonGoldSmall: `${ASSET_BASE}ui/button-gold-small.png`,
   panelCyan: `${ASSET_BASE}ui/panel-cyan-large.png`,
   footerPurple: `${ASSET_BASE}ui/footer-purple.png`,
   iconCoin: `${ASSET_BASE}icons/coin.png`,
@@ -24,16 +24,13 @@ const IMAGE_ASSETS = {
   iconPlay: `${ASSET_BASE}icons/play.png`,
   iconSettings: `${ASSET_BASE}icons/settings.png`,
   iconBack: `${ASSET_BASE}icons/back.png`,
-  iconClose: `${ASSET_BASE}icons/close.png`,
   iconMusic: `${ASSET_BASE}icons/music.png`,
   iconVolume: `${ASSET_BASE}icons/volume.png`,
   iconLock: `${ASSET_BASE}icons/lock.png`,
   iconGoldStar: `${ASSET_BASE}icons/gold-star.png`,
   iconEmptyStar: `${ASSET_BASE}icons/empty-star.png`,
-  iconPause: `${ASSET_BASE}icons/pause.png`,
   iconShare: `${ASSET_BASE}icons/share.png`,
   iconShield: `${ASSET_BASE}icons/shield.png`,
-  iconLightning: `${ASSET_BASE}icons/lightning.png`,
 }
 
 const SFX_URLS = {
@@ -93,13 +90,6 @@ export function createAssetManager() {
     },
     setMusicEnabled(enabled) {
       if (!enabled) this.stopMusic()
-    },
-    pauseRunMusic() {
-      if (activeAudio && !activeAudio.paused) activeAudio.pause()
-    },
-    resumeRunMusic(enabled) {
-      if (!enabled || !activeAudio) return
-      activeAudio.play().catch(() => {})
     },
     playSfx(name, enabled) {
       if (!enabled) return

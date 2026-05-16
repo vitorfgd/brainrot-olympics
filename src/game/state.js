@@ -3,13 +3,15 @@ import {
   CONTINUE_COST,
   CONTINUE_HP_FRAC,
   CONTINUE_PROMPT_SECONDS,
-  HIT_THEMES,
   JUDGES,
   STAGES,
   LOGICAL_WIDTH,
   LOGICAL_HEIGHT,
   MAX_HP,
+  betterGrade,
+  coinsForResults,
   eliminationStamp,
+  gradeForRun,
   rankForEndlessScore,
   skinsForJudge,
 } from './rules.js'
@@ -23,7 +25,6 @@ const DEFAULT_SAVE = {
   stageBests: {},
   ownedSkins: {},
   equippedSkins: {},
-  equippedHitTheme: 'default',
   bankedExtraLife: 0,
   doubleCoinsRunsRemaining: 0,
   comboShieldRunsRemaining: 0,
@@ -45,13 +46,12 @@ export function createGameState(canvas, ctx, assets) {
       save.ownedSkins[judge.id].push('default')
     }
   }
-  if (!HIT_THEMES.some((t) => t.id === save.equippedHitTheme)) save.equippedHitTheme = 'default'
   save.bankedExtraLife ??= 0
   save.doubleCoinsRunsRemaining ??= 0
   save.comboShieldRunsRemaining ??= 0
   persistSave(save)
 
-  return {
+  const state = {
     canvas,
     ctx,
     assets,
@@ -63,12 +63,19 @@ export function createGameState(canvas, ctx, assets) {
     ui: { buttons: [] },
     save,
     run: null,
-    particles: [],
+    fireworks: [],
+    nextAmbientFireworkAt: 0,
     toast: null,
     boostSelectPending: null,
     boostSelectUseDoubleCoins: true,
     boostSelectUseComboShield: true,
   }
+
+  if (!save.ftueCompleted) {
+    startStageRun(state, 1, { ftue: true })
+  }
+
+  return state
 }
 
 export function resizeCanvas(state) {
@@ -132,10 +139,11 @@ export function startRun(state, options) {
     failed: false,
     grade: 'D',
     activeJudgeIndex: options.activeJudgeIndex,
-    paused: false,
-    pauseAccum: 0,
     judgeMoodKind: 'idle',
     judgeMoodUntil: 0,
+    shakeStartedAt: 0,
+    shakeUntil: 0,
+    shakeMagnitude: 0,
     milestoneFlashUntil: 0,
     inactiveMoods: JUDGES.map(() => ({ kind: 'idle', until: 0 })),
     hp: MAX_HP,
@@ -165,7 +173,8 @@ export function startRun(state, options) {
     internalMissCause: '',
   }
   state.screen = 'run'
-  state.particles = []
+  state.fireworks = []
+  state.nextAmbientFireworkAt = state.time + 1.2
   state.assets.startMusic(judge, state.save.settings.music)
 }
 
@@ -180,7 +189,6 @@ export function finishRun(state, completed, cause = 'OUT OF SYNC', opts = {}) {
   run.resultReadyAt = state.time + 1.2
   run.targets = []
   run.activeTargetId = null
-  run.paused = false
   run.judgeMoodKind = completed ? 'hype' : 'eliminated'
   run.judgeMoodUntil = state.time + 120
   state.assets.stopMusic()
@@ -271,8 +279,8 @@ export function applyRunResults(state) {
   const previousStageBest = run.mode === 'stage' ? state.save.stageBests[run.stage.id] : null
   const accuracy = run.resolvedNotes ? run.accuracyPoints / run.resolvedNotes : 0
   run.accuracy = accuracy
-  run.grade = run.failed ? 'FAILED' : gradeForRun(run)
-  let earned = coinsForRun(run, previousStageBest)
+  run.grade = gradeForRun(run)
+  let earned = coinsForResults(run, previousStageBest)
   if (run.thisRunDoubleCoins) earned *= 2
   run.coinsEarned = earned
   state.save.coins += run.coinsEarned
@@ -287,9 +295,6 @@ export function applyRunResults(state) {
       grade: betterGrade(current.grade || 'FAILED', run.grade),
       accuracy: Math.max(current.accuracy || 0, accuracy),
       cleared: Boolean(current.cleared || run.completed),
-    }
-    if (run.completed && run.stage.id >= STAGES[STAGES.length - 1].id) {
-      state.save.ftueCompleted = true
     }
   }
 
@@ -360,39 +365,15 @@ function loadSave() {
 function mergeSave(base, incoming) {
   return {
     ...structuredClone(base),
-    ...incoming,
+    ftueCompleted: incoming.ftueCompleted ?? base.ftueCompleted,
+    coins: incoming.coins ?? base.coins,
+    highScore: incoming.highScore ?? base.highScore,
     stageBests: { ...base.stageBests, ...(incoming.stageBests || {}) },
     ownedSkins: { ...base.ownedSkins, ...(incoming.ownedSkins || {}) },
     equippedSkins: { ...base.equippedSkins, ...(incoming.equippedSkins || {}) },
-    equippedHitTheme: incoming.equippedHitTheme ?? base.equippedHitTheme,
     bankedExtraLife: incoming.bankedExtraLife ?? base.bankedExtraLife,
     doubleCoinsRunsRemaining: incoming.doubleCoinsRunsRemaining ?? base.doubleCoinsRunsRemaining,
     comboShieldRunsRemaining: incoming.comboShieldRunsRemaining ?? base.comboShieldRunsRemaining,
     settings: { ...base.settings, ...(incoming.settings || {}) },
   }
-}
-
-function gradeForRun(run) {
-  const accuracy = run.resolvedNotes ? run.accuracyPoints / run.resolvedNotes : 0
-  if (accuracy >= 0.95) return 'S'
-  if (accuracy >= 0.85) return 'A'
-  if (accuracy >= 0.7) return 'B'
-  if (accuracy >= 0.55) return 'C'
-  return 'D'
-}
-
-function gradeValue(grade) {
-  return ['FAILED', 'D', 'C', 'B', 'A', 'S'].indexOf(grade)
-}
-
-function betterGrade(a, b) {
-  return gradeValue(b) > gradeValue(a) ? b : a
-}
-
-function coinsForRun(run, previousStageBest) {
-  if (run.ftue && !run.completed) return 0
-  let coins = Math.max(5, Math.floor(run.score / 500))
-  if (run.mode === 'stage' && run.completed && !previousStageBest?.cleared) coins += 50
-  if (run.mode === 'stage' && run.completed && gradeValue(run.grade) > gradeValue(previousStageBest?.grade || 'FAILED')) coins += 25
-  return coins
 }

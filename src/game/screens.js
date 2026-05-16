@@ -1,4 +1,4 @@
-import { JUDGES, STAGES, isStageUnlocked } from './rules.js'
+import { JUDGES, LOGICAL_HEIGHT, LOGICAL_WIDTH, STAGES, gradeRank, isEndlessUnlocked, isStageUnlocked } from './rules.js'
 import {
   acceptContinue,
   applyRunResults,
@@ -15,7 +15,7 @@ import {
 import { handleRunPointerDown, handleRunPointerMove, handleRunPointerUp, updateRun } from './targets.js'
 
 export function updateGame(state) {
-  updateParticles(state)
+  updateFireworks(state)
   updateRun(state)
 
   const run = state.run
@@ -29,6 +29,7 @@ export function updateGame(state) {
 
   if (state.screen === 'run' && run?.status === 'finished' && state.time >= run.resultReadyAt) {
     applyRunResults(state)
+    run.resultsShownAt = state.time
     state.screen = 'results'
   }
 }
@@ -43,23 +44,6 @@ export function handlePointerDown(state) {
     }
     if (button?.id === 'continueDecline') {
       declineContinue(state)
-      return
-    }
-    return
-  }
-
-  if (state.screen === 'run' && state.run?.status === 'playing') {
-    if (button?.id === 'runPause') {
-      state.run.paused = true
-      state.assets.pauseRunMusic()
-      return
-    }
-  }
-
-  if (state.screen === 'run' && state.run?.paused) {
-    if (button?.id === 'runResume') {
-      state.run.paused = false
-      state.assets.resumeRunMusic(state.save.settings.music)
       return
     }
     return
@@ -93,7 +77,7 @@ export function handlePointerDown(state) {
   if (!button) return
 
   if (button.id === 'playEndless') {
-    if (!state.save.ftueCompleted) {
+    if (!isEndlessUnlocked(state.save)) {
       showToast(state, `Clear Stage ${STAGES.length} to unlock Endless`)
       return
     }
@@ -112,7 +96,7 @@ export function handlePointerDown(state) {
     state.screen = 'leaderboard'
     return
   }
-  if (button.id === 'shop' || button.id === 'resultsShop') {
+  if (button.id === 'shop') {
     state.screen = 'shop'
     return
   }
@@ -133,7 +117,7 @@ export function handlePointerDown(state) {
     beginRunWithBoostFlow(state, {
       kind: 'stage',
       stageId,
-      ftue: !state.save.ftueCompleted,
+      ftue: false,
     })
     return
   }
@@ -144,10 +128,6 @@ export function handlePointerDown(state) {
   }
   if (button.id.startsWith('boost:')) {
     buyBoostProduct(state, button.id.split(':')[1])
-    return
-  }
-  if (button.id === 'resultsShare') {
-    shareRunResult(state)
     return
   }
   if (button.id === 'toggleMusic') {
@@ -165,7 +145,13 @@ export function handlePointerDown(state) {
   }
   if (button.id === 'tryAgain') {
     const run = state.run
-    if (run?.mode === 'stage') beginRunWithBoostFlow(state, { kind: 'stage', stageId: run.stage.id })
+    if (run?.mode === 'stage' && run.completed && gradeRank(run.grade) >= gradeRank('B')) {
+      if (run.ftue) {
+        state.save.ftueCompleted = true
+        persistSave(state.save)
+      }
+      state.screen = 'stageSelect'
+    } else if (run?.mode === 'stage') beginRunWithBoostFlow(state, { kind: 'stage', stageId: run.stage.id })
     else beginRunWithBoostFlow(state, { kind: 'endless' })
     return
   }
@@ -175,27 +161,21 @@ export function handlePointerDown(state) {
       startStageRun(state, run?.stage?.id || 1, { ftue: true })
       return
     }
-    if (run.stage.id >= STAGES[STAGES.length - 1].id) {
-      state.save.ftueCompleted = true
-      persistSave(state.save)
-      showToast(state, 'Tutorial complete')
-      state.screen = 'home'
-      return
-    }
-    startStageRun(state, run.stage.id + 1, { ftue: true })
+    state.save.ftueCompleted = true
+    persistSave(state.save)
+    showToast(state, 'Levels unlocked')
+    state.screen = 'home'
     return
   }
 }
 
 export function handlePointerMove(state) {
   if (state.screen === 'boostSelect') return
-  if (state.screen === 'run' && state.run?.paused) return
   if (state.screen === 'run') handleRunPointerMove(state)
 }
 
 export function handlePointerUp(state) {
   if (state.screen === 'boostSelect') return
-  if (state.screen === 'run' && state.run?.paused) return
   if (state.screen === 'run') handleRunPointerUp(state)
 }
 
@@ -210,39 +190,28 @@ function findButton(state) {
   return null
 }
 
-function updateParticles(state) {
-  for (const particle of state.particles) {
-    particle.age += state.deltaTime
-    particle.x += particle.vx * state.deltaTime
-    particle.y += particle.vy * state.deltaTime
-    particle.vy += 130 * state.deltaTime
+function updateFireworks(state) {
+  state.fireworks ??= []
+  for (const firework of state.fireworks) {
+    firework.age += state.deltaTime
   }
-  state.particles = state.particles.filter((particle) => particle.age < particle.life)
+  state.fireworks = state.fireworks.filter((firework) => firework.age < firework.life)
+
+  if (state.time < (state.nextAmbientFireworkAt || 0)) return
+
+  const runIsPlaying = state.screen === 'run' && state.run?.status === 'playing'
+  if (!runIsPlaying) {
+    state.fireworks.push({
+      x: 72 + Math.random() * (LOGICAL_WIDTH - 144),
+      y: 92 + Math.random() * (LOGICAL_HEIGHT * 0.36),
+      size: 128 + Math.random() * 92,
+      age: 0,
+      life: 0.95,
+      alpha: 0.42,
+      ambient: true,
+    })
+  }
+
+  state.nextAmbientFireworkAt = state.time + 1.9 + Math.random() * 2.8
 }
 
-function shareRunResult(state) {
-  const run = state.run
-  if (!run) return
-  const url = typeof window !== 'undefined' ? window.location.href : ''
-  const modeLabel = run.mode === 'endless' ? 'Endless' : `Stage ${run.stage?.id || ''}`
-  const text = `Brain Rot Olympics — ${modeLabel} | Score ${run.score} | Grade ${run.grade} | Best combo ${run.bestCombo}`
-  const title = 'Brain Rot Olympics'
-  const sharePayload = { title, text, url }
-  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-    navigator.share(sharePayload).catch(() => copyShareFallback(state, text, url))
-    return
-  }
-  copyShareFallback(state, text, url)
-}
-
-function copyShareFallback(state, text, url) {
-  const body = `${text} ${url}`.trim()
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(body).then(
-      () => showToast(state, 'Copied to clipboard'),
-      () => showToast(state, 'Could not copy'),
-    )
-  } else {
-    showToast(state, 'Share not available here')
-  }
-}

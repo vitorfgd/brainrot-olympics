@@ -14,7 +14,7 @@ export const JUDGES = [
     id: 'blingbeak',
     name: 'BlingBeak',
     title: 'Beat Inspector',
-    color: '#ff2fa3',
+    color: '#ff5bd6',
     imageSrc: `${ASSET_BASE}characters/BlingBeak.png`,
     musicSrc: JUDGE_MUSIC_SRC,
     skins: [
@@ -65,31 +65,28 @@ export const JUDGES = [
 ]
 
 /** Default target + hit burst colors. */
-export const HIT_THEMES = [
-  {
-    id: 'default',
-    name: 'Neon Arena',
-    price: 0,
-    ringTap: { outer: '#a8fbff', inner: '#ff3dad', label: '#171236' },
-    ringSlide: { path: '#a8fbff', pathDim: 'rgba(255, 255, 255, 0.86)', start: '#ff3dad', end: '#fce76d', trail: '#ffffff' },
-    ringHold: { fill: '#fce76d', arc: '#a8fbff', label: '#171236' },
-    burst: { perfect: '#a8fbff', good: '#ffd22e', okay: '#ff69c8' },
-    milestoneBurstScale: 1.35,
-  },
-]
+export const DEFAULT_HIT_THEME = {
+  id: 'default',
+  name: 'Neon Arena',
+  ringTap: { outer: '#a8fbff', inner: '#ff65e6', label: '#171236' },
+  ringSlide: { path: '#a8fbff', pathDim: 'rgba(255, 255, 255, 0.86)', start: '#ff65e6', end: '#fce76d', trail: '#ffffff' },
+  ringHold: { fill: '#fce76d', arc: '#a8fbff', label: '#171236' },
+  burst: { perfect: '#a8fbff', good: '#ffd22e', okay: '#ff8ee5' },
+  milestoneBurstScale: 1.35,
+}
 
 export const COMBO_MILESTONE_AT = [10, 25, 50, 100, 200]
 
-export function hitThemeById(id) {
-  return HIT_THEMES.find((t) => t.id === id) || HIT_THEMES[0]
+export function hitThemeById() {
+  return DEFAULT_HIT_THEME
 }
 
 export function milestoneCalloutText(combo) {
-  if (combo === 10) return 'COMBO 10 — WARMING UP'
-  if (combo === 25) return '25 — HEATING UP'
-  if (combo === 50) return '50 — ON FIRE'
-  if (combo === 100) return '100 — UNHINGED'
-  if (combo === 200) return '200 — MAX BRAINROT'
+  if (combo === 10) return 'COMBO 10 - WARMING UP'
+  if (combo === 25) return '25 - HEATING UP'
+  if (combo === 50) return '50 - ON FIRE'
+  if (combo === 100) return '100 - UNHINGED'
+  if (combo === 200) return '200 - MAX BRAINROT'
   return ''
 }
 
@@ -144,6 +141,17 @@ export function skinsForJudge(judgeId) {
 export const STAGES = [
   {
     id: 1,
+    name: 'Tap Lesson',
+    cardTitle: 'TAP LIKE A STAR',
+    cardColor: '#ff78ff',
+    duration: 45,
+    kinds: ['tap'],
+    difficulty: 0.08,
+    judgeIndex: 0,
+    portraitSrc: `${ASSET_BASE}characters/BlingBeak.png`,
+  },
+  {
+    id: 2,
     name: 'Slide Lesson',
     cardTitle: 'SLIDE OR DIE',
     cardColor: '#5ecbff',
@@ -154,7 +162,7 @@ export const STAGES = [
     portraitSrc: `${ASSET_BASE}characters/stage-sprites/ferret-default.png`,
   },
   {
-    id: 2,
+    id: 3,
     name: 'Hold Lesson',
     cardTitle: 'HOLD THE LINE',
     cardColor: '#fce76d',
@@ -165,7 +173,7 @@ export const STAGES = [
     portraitSrc: `${ASSET_BASE}characters/stage-sprites/manatee-default.png`,
   },
   {
-    id: 3,
+    id: 4,
     name: 'Mixed Pressure',
     cardTitle: 'MIXED CHAOS',
     cardColor: '#5cff7b',
@@ -176,7 +184,7 @@ export const STAGES = [
     portraitSrc: `${ASSET_BASE}characters/stage-sprites/lemur-default.png`,
   },
   {
-    id: 4,
+    id: 5,
     name: 'Chaos Finale',
     cardTitle: 'THE FINAL SHOW',
     cardColor: '#9b7dff',
@@ -193,6 +201,10 @@ export function isStageUnlocked(save, stageId) {
   if (stageId <= 1) return true
   const g = save.stageBests[stageId - 1]?.grade
   return Boolean(g && g !== 'FAILED')
+}
+
+export function isEndlessUnlocked(save) {
+  return Boolean(save.stageBests[STAGES[STAGES.length - 1].id]?.cleared)
 }
 
 export function comboMultiplier(combo) {
@@ -214,6 +226,15 @@ export function gradeForAccuracy(accuracy, failed = false) {
 
 export function gradeRank(grade) {
   return ['FAILED', 'D', 'C', 'B', 'A', 'S'].indexOf(grade)
+}
+
+export function gradeForRun(run) {
+  const accuracy = run.resolvedNotes ? run.accuracyPoints / run.resolvedNotes : 0
+  return gradeForAccuracy(accuracy, run.failed)
+}
+
+export function betterGrade(a, b) {
+  return gradeRank(b) > gradeRank(a) ? b : a
 }
 
 export function scoreForHit(quality, combo) {
@@ -248,7 +269,7 @@ export function difficultyProfile(run) {
     approach: lerp(1.18, 0.62, ramp),
     slideTolerance: lerp(58, 36, ramp),
     holdDuration: lerp(0.82, 1.28, ramp),
-    maxLiveTargets: run.mode === 'stage' && run.stage.id < 4 ? 1 : Math.min(1 + Math.floor(ramp * 3), 4),
+    maxLiveTargets: run.mode === 'stage' && run.stage.id < 5 ? 1 : Math.min(1 + Math.floor(ramp * 3), 4),
   }
 }
 
@@ -263,6 +284,7 @@ export function resolveTargetKind(run) {
 }
 
 export function coinsForResults(run, previousStageBest) {
+  if (run.ftue && !run.completed) return 0
   let coins = Math.max(5, Math.floor(run.score / 500))
   if (run.mode === 'stage' && run.completed && !previousStageBest?.cleared) coins += 50
   if (run.mode === 'stage' && run.completed && gradeRank(run.grade) > gradeRank(previousStageBest?.grade || 'FAILED')) coins += 25

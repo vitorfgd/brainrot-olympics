@@ -8,19 +8,34 @@ import {
   MAX_HP,
   STAGES,
   clamp,
+  gradeRank,
   hitThemeById,
+  isEndlessUnlocked,
   isStageUnlocked,
   rankForEndlessScore,
 } from './rules.js'
-import { isSkinOwned } from './state.js'
 import { pointOnSlider } from './targets.js'
+
+const FIREWORK_FRAME_COUNT = 8
+const RESULT_MEDAL_CENTER_FIX = {
+  D: -7,
+  C: 3,
+  B: 9,
+  A: -7,
+  S: 17,
+}
 
 export function drawGame(state) {
   const ctx = state.ctx
   state.ui.buttons = []
   ctx.clearRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
   drawBackground(state)
+
+  const shake = runShakeOffset(state)
+  if (shake) ctx.save()
+  if (shake) ctx.translate(shake.x, shake.y)
   drawScrollingConfetti(state)
+  drawFireworks(state)
 
   if (state.screen === 'home') drawHome(state)
   if (state.screen === 'leaderboard') drawLeaderboard(state)
@@ -31,8 +46,20 @@ export function drawGame(state) {
   if (state.screen === 'results') drawResults(state)
   if (state.screen === 'boostSelect') drawBoostSelect(state)
 
-  drawParticles(state)
+  if (shake) ctx.restore()
   drawToast(state)
+}
+
+function runShakeOffset(state) {
+  const run = state.screen === 'run' ? state.run : null
+  if (!run?.shakeUntil || state.time >= run.shakeUntil) return null
+  const span = Math.max(0.01, run.shakeUntil - (run.shakeStartedAt || state.time))
+  const t = clamp((state.time - (run.shakeStartedAt || state.time)) / span, 0, 1)
+  const amp = (run.shakeMagnitude || 0) * (1 - t)
+  return {
+    x: Math.sin(state.time * 120) * amp,
+    y: Math.cos(state.time * 96) * amp * 0.65,
+  }
 }
 
 export function drawText(ctx, text, x, y, size, color = '#fff', align = 'center', weight = 800) {
@@ -61,13 +88,13 @@ function drawHome(state) {
   drawHomeTopStats(state)
   drawHomeHeroTitle(state)
 
-  if (state.save.ftueCompleted) {
+  if (isEndlessUnlocked(state.save)) {
     drawHomeSpriteMenuButton(state, 'playEndless', 46, 622, 448, 102, {
       sprite: 'buttonPink',
       label: 'PLAY ENDLESS',
       icon: 'iconInfinity',
       labelSize: 36,
-      labelColor: '#ff4fd8',
+      labelColor: '#ff78ff',
     })
   } else {
     drawHomeSpriteMenuButton(state, 'playEndlessLocked', 46, 622, 448, 102, {
@@ -101,97 +128,7 @@ function stagesClearedCount(save) {
   }).length
 }
 
-function drawHomeAtmosphere(state) {
-  const ctx = state.ctx
-  const t = state.time
-  ctx.save()
-  const vignette = ctx.createRadialGradient(
-    LOGICAL_WIDTH / 2,
-    LOGICAL_HEIGHT * 0.45,
-    40,
-    LOGICAL_WIDTH / 2,
-    LOGICAL_HEIGHT * 0.5,
-    LOGICAL_HEIGHT * 0.75,
-  )
-  vignette.addColorStop(0, 'rgba(18, 4, 42, 0)')
-  vignette.addColorStop(1, 'rgba(8, 2, 28, 0.55)')
-  ctx.fillStyle = vignette
-  ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
-
-  const spot = ctx.createRadialGradient(LOGICAL_WIDTH / 2, -20, 10, LOGICAL_WIDTH / 2, 200, 380)
-  spot.addColorStop(0, 'rgba(140, 210, 255, 0.22)')
-  spot.addColorStop(0.45, 'rgba(100, 160, 255, 0.08)')
-  spot.addColorStop(1, 'rgba(0, 0, 0, 0)')
-  ctx.fillStyle = spot
-  ctx.fillRect(0, 0, LOGICAL_WIDTH, 420)
-
-  drawCornerFestoon(ctx, t, 0)
-  drawCornerFestoon(ctx, t, 1)
-  ctx.restore()
-}
-
-/** sideIndex 0 = left edge, 1 = right edge */
-function drawCornerFestoon(ctx, t, sideIndex) {
-  const right = sideIndex === 1
-  const baseX = right ? LOGICAL_WIDTH : 0
-  const dir = right ? -1 : 1
-  ctx.strokeStyle = 'rgba(255, 100, 200, 0.35)'
-  ctx.lineWidth = 3
-  for (let i = 0; i < 5; i += 1) {
-    ctx.beginPath()
-    const y0 = 720 + i * 28 + Math.sin(t * 2 + i) * 6
-    ctx.moveTo(baseX, y0)
-    ctx.quadraticCurveTo(baseX + dir * (90 + i * 12), y0 - 40 - i * 8, baseX + dir * (40 + i * 22), y0 - 120 - i * 14)
-    ctx.stroke()
-  }
-  ctx.strokeStyle = 'rgba(24, 232, 255, 0.28)'
-  ctx.lineWidth = 2
-  for (let i = 0; i < 4; i += 1) {
-    ctx.beginPath()
-    const y0 = 100 + i * 36 + Math.cos(t * 2.2 + i * 0.7) * 5
-    ctx.moveTo(baseX, y0)
-    ctx.quadraticCurveTo(baseX + dir * (70 + i * 10), y0 + 50 + i * 6, baseX + dir * (32 + i * 16), y0 + 110 + i * 10)
-    ctx.stroke()
-  }
-
-  const burstX = right ? LOGICAL_WIDTH - 36 : 36
-  drawMiniFirework(ctx, t, burstX, 132 + (right ? 1 : 0) * 6)
-  drawMiniFirework(ctx, t * 1.07, burstX, 848 + (right ? -1 : 1) * 4)
-}
-
-function drawMiniFirework(ctx, t, burstX, burstY) {
-  ctx.strokeStyle = 'rgba(252, 231, 109, 0.45)'
-  ctx.lineWidth = 2
-  for (let a = 0; a < 8; a += 1) {
-    const ang = (a / 8) * Math.PI * 2 + t * 0.4
-    const len = 18 + (a % 2) * 10
-    ctx.beginPath()
-    ctx.moveTo(burstX, burstY)
-    ctx.lineTo(burstX + Math.cos(ang) * len, burstY + Math.sin(ang) * len)
-    ctx.stroke()
-  }
-}
-
-function drawHomeGhostJudges(state) {
-  const ctx = state.ctx
-  const poses = [
-    { x: 108, y: 268, s: 108 },
-    { x: 432, y: 252, s: 118 },
-    { x: 168, y: 388, s: 102 },
-    { x: 372, y: 398, s: 108 },
-  ]
-  ctx.save()
-  JUDGES.forEach((judge, i) => {
-    const p = poses[i]
-    const img = judgeImage(state, judge, state.save.equippedSkins[judge.id])
-    ctx.globalAlpha = 0.13
-    drawJudgeImage(ctx, img, p.x - p.s / 2, p.y - p.s / 2, p.s, Math.round(p.s * 1.08))
-    ctx.globalAlpha = 1
-  })
-  ctx.restore()
-}
-
-const HOME_PORTRAIT_RINGS = ['#ff4fd8', '#5cff7a', '#7ce8ff', '#ffe24a']
+const HOME_PORTRAIT_RINGS = ['#ff78ff', '#5cff7a', '#7ce8ff', '#ffe24a']
 
 function drawHomeJudgePortraits(state) {
   const spots = [
@@ -329,35 +266,6 @@ function drawCircleIconButton(state, id, cx, cy, r, iconKey, ringColor) {
   button(state, id, cx - r, cy - r, r * 2, r * 2)
 }
 
-function drawMenuAmbient(state) {
-  const ctx = state.ctx
-  const colors = ['#ff3dad', '#a8fbff', '#fce76d', '#ff86ce', '#7cff5b']
-  const t = state.time
-  for (let i = 0; i < 42; i += 1) {
-    const x = (i * 73 + Math.sin(t * 1.2 + i * 0.3) * 14) % LOGICAL_WIDTH
-    const y = (t * (14 + (i % 5) * 5) + i * 41) % LOGICAL_HEIGHT
-    ctx.save()
-    ctx.translate(x, y)
-    ctx.rotate(t * 0.8 + i * 0.2)
-    ctx.fillStyle = colors[i % colors.length]
-    const w = 5 + (i % 3)
-    const h = 3 + (i % 2)
-    roundRect(ctx, -w / 2, -h / 2, w, h, 1.5)
-    ctx.fill()
-    ctx.restore()
-  }
-  for (let s = 0; s < 6; s += 1) {
-    const side = s % 2 === 0 ? 0 : LOGICAL_WIDTH
-    const sy = (t * 40 + s * 160) % LOGICAL_HEIGHT
-    ctx.strokeStyle = `rgba(255, 200, 255, ${0.15 + (s % 3) * 0.06})`
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.moveTo(side, sy)
-    ctx.quadraticCurveTo(side === 0 ? 80 : LOGICAL_WIDTH - 80, sy + 30, LOGICAL_WIDTH / 2, sy + 60 + s * 12)
-    ctx.stroke()
-  }
-}
-
 function drawStageSelect(state) {
   const ctx = state.ctx
   drawStageSelectSpotlights(state)
@@ -481,6 +389,7 @@ function drawStageLevelCard(state, stage, y, h, unlocked) {
 }
 
 function titleStageCardText(title) {
+  if (title === 'TAP LIKE A STAR') return ['TAP LIKE', 'A STAR']
   if (title === 'HOLD THE LINE') return ['HOLD', 'THE LINE']
   if (title === 'THE FINAL SHOW') return ['THE FINAL', 'SHOW']
   return title.split(' ').length > 2 ? title.split(' ').reduce((lines, word) => {
@@ -539,10 +448,11 @@ function drawStageCardAvatar(state, stage, ax, ay, size, borderColor, unlocked) 
 }
 
 function stagePortraitFraming(stageId) {
-  if (stageId === 1) return { zoom: 1.12, x: 2, y: 8 }
-  if (stageId === 2) return { zoom: 1.04, x: 0, y: 10 }
-  if (stageId === 3) return { zoom: 1.08, x: 0, y: 6 }
-  if (stageId === 4) return { zoom: 1.1, x: 0, y: 14 }
+  if (stageId === 1) return { zoom: 1.18, x: 0, y: 4 }
+  if (stageId === 2) return { zoom: 1.12, x: 2, y: 8 }
+  if (stageId === 3) return { zoom: 1.04, x: 0, y: 10 }
+  if (stageId === 4) return { zoom: 1.08, x: 0, y: 6 }
+  if (stageId === 5) return { zoom: 1.1, x: 0, y: 14 }
   return { zoom: 1.08, x: 0, y: 8 }
 }
 
@@ -599,11 +509,12 @@ function drawLeaderboard(state) {
   ctx.fillStyle = 'rgba(5, 4, 28, 0.22)'
   ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
   drawRoundTealBackButton(state, 48, 56, 36)
+  drawLeaderboardHeader(state)
 
   const rows = leaderboardRows()
-  const startY = 122
-  const rowH = 58
-  const gap = 10
+  const startY = 168
+  const rowH = 52
+  const gap = 12
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index]
     drawLeaderboardRow(state, row, index, startY + index * (rowH + gap), rowH)
@@ -618,26 +529,30 @@ function drawLeaderboard(state) {
 
   const playerScore = Math.max(state.save.highScore, 84600)
   const pr = rankForEndlessScore(playerScore)
-  drawLeaderboardPlayerRow(state, playerScore, pr, 836)
+  drawLeaderboardPlayerRow(state, playerScore, pr, 842)
+}
+
+function drawLeaderboardHeader(state) {
+  const ctx = state.ctx
+  drawOutlinedText(ctx, 'HALL OF CHAOS', LOGICAL_WIDTH / 2, 108, 40, '#fce76d', '#5e315f', 'center', 1000, 5)
 }
 
 function drawShop(state) {
   const ctx = state.ctx
   drawRoundTealBackButton(state, 48, 56, 36)
   drawShopCoinPill(state)
-  drawShopHeader(state)
   drawShopMascot(state)
 
-  drawOutlinedText(ctx, 'POWER-UPS', LOGICAL_WIDTH / 2, 268, 32, '#ffffff', '#234b61', 'center', 1000, 4)
-  drawPowerUpRow(state, BOOST_PRODUCTS[0], 48, 304, '#ff4fd8', 'iconHeart', 'EXTRA LIFE')
-  drawPowerUpRow(state, BOOST_PRODUCTS[1], 48, 358, '#fce76d', 'iconCoin', 'DOUBLE COINS BOOST')
-  drawPowerUpRow(state, BOOST_PRODUCTS[2], 48, 412, '#a8fbff', 'iconShield', 'COMBO SHIELD')
+  drawOutlinedText(ctx, 'POWER-UPS', LOGICAL_WIDTH / 2, 274, 34, '#ffffff', '#234b61', 'center', 1000, 4)
+  drawPowerUpRow(state, BOOST_PRODUCTS[0], 38, 312, '#ff78ff', 'iconHeart', 'EXTRA LIFE')
+  drawPowerUpRow(state, BOOST_PRODUCTS[1], 38, 368, '#fce76d', 'iconCoin', 'DOUBLE COINS BOOST')
+  drawPowerUpRow(state, BOOST_PRODUCTS[2], 38, 424, '#a8fbff', 'iconShield', 'COMBO SHIELD')
 
-  drawOutlinedText(ctx, 'COSMETICS', LOGICAL_WIDTH / 2, 508, 32, '#ffffff', '#234b61', 'center', 1000, 4)
-  drawShopCosmeticCard(state, shopSkinItem(state, 'blingbeak', 'partyhat', '#5cff7b'), 50, 542)
-  drawShopCosmeticCard(state, shopSkinItem(state, 'disco', 'headband', '#a8fbff'), 286, 542)
-  drawShopCosmeticCard(state, shopSkinItem(state, 'coolman', 'king', '#a8fbff'), 50, 724)
-  drawShopCosmeticCard(state, shopSkinItem(state, 'dj', 'punk', '#fce76d'), 286, 724)
+  drawOutlinedText(ctx, 'COSMETICS', LOGICAL_WIDTH / 2, 516, 34, '#ffffff', '#234b61', 'center', 1000, 4)
+  drawShopCosmeticCard(state, shopSkinItem(state, 'blingbeak', 'partyhat', '#5cff7b'), 44, 550)
+  drawShopCosmeticCard(state, shopSkinItem(state, 'disco', 'headband', '#a8fbff'), 282, 550)
+  drawShopCosmeticCard(state, shopSkinItem(state, 'coolman', 'king', '#a8fbff'), 44, 728)
+  drawShopCosmeticCard(state, shopSkinItem(state, 'dj', 'punk', '#fce76d'), 282, 728)
 }
 
 function shopSkinItem(state, judgeId, skinId, color) {
@@ -651,48 +566,38 @@ function shopSkinItem(state, judgeId, skinId, color) {
   }
 }
 
-function drawShopHeader(state) {
-  const ctx = state.ctx
-  const image = state.assets.images.shopLogo
-  if (image?.complete && image.naturalWidth > 0) {
-    const w = 260
-    const h = (image.naturalHeight / image.naturalWidth) * w
-    ctx.save()
-    ctx.globalCompositeOperation = 'screen'
-    ctx.drawImage(image, (LOGICAL_WIDTH - w) / 2, 24, w, h)
-    ctx.restore()
-    return
-  }
-  drawOutlinedText(ctx, 'BRAINROT MARKET', LOGICAL_WIDTH / 2, 60, 30, '#ff4fd8', '#37154d', 'center', 1000, 4)
-}
-
 function drawShopMascot(state) {
   const ctx = state.ctx
   const image = state.assets.images.shopMan
   if (!image?.complete || image.naturalWidth <= 0) return
-  const w = 122
+  const w = 148
   const h = (image.naturalHeight / image.naturalWidth) * w
-  drawImage(ctx, image, LOGICAL_WIDTH / 2 - w / 2, 112, w, h)
+  drawImage(ctx, image, LOGICAL_WIDTH / 2 - w / 2, 106, w, h)
 }
 
 function drawShopCoinPill(state) {
   const ctx = state.ctx
+  const text = formatScore(state.save.coins)
   ctx.save()
+  ctx.font = '1000 27px Fredoka, system-ui, Segoe UI, sans-serif'
+  const pillW = Math.max(142, ctx.measureText(text).width + 68)
+  const x = LOGICAL_WIDTH - pillW - 24
+  const y = 32
   ctx.fillStyle = 'rgba(40, 12, 48, 0.82)'
-  roundRect(ctx, 388, 32, 126, 40, 20)
+  roundRect(ctx, x, y, pillW, 48, 24)
   ctx.fill()
-  ctx.strokeStyle = '#ff4fd8'
+  ctx.strokeStyle = '#ff78ff'
   ctx.lineWidth = 3
-  roundRect(ctx, 388, 32, 126, 40, 20)
+  roundRect(ctx, x, y, pillW, 48, 24)
   ctx.stroke()
   ctx.restore()
-  drawIcon(ctx, state.assets.images.iconCoin, 400, 39, 26)
-  drawOutlinedText(ctx, formatScore(state.save.coins), 432, 52, 21, '#fce76d', '#5e315f', 'left', 1000, 3)
+  drawIcon(ctx, state.assets.images.iconCoin, x + 13, y + 8, 32)
+  drawOutlinedText(ctx, text, x + 54, y + 24, 27, '#fce76d', '#5e315f', 'left', 1000, 3)
 }
 
 function drawPowerUpRow(state, product, x, y, color, icon, label) {
   const ctx = state.ctx
-  const w = 444
+  const w = 464
   const h = 48
   ctx.save()
   ctx.fillStyle = 'rgba(18, 9, 54, 0.76)'
@@ -711,14 +616,14 @@ function drawPowerUpRow(state, product, x, y, color, icon, label) {
   ctx.restore()
   drawIcon(ctx, state.assets.images[icon], x + 19, y + 9, 30)
   drawOutlinedText(ctx, label, x + 94, y + h / 2, 21, color, '#2d1648', 'left', 1000, 3)
-  drawOutlinedText(ctx, `${product.price} coins`, x + w - 18, y + h / 2, 20, '#ffdaee', '#4a123c', 'right', 1000, 3)
+  drawOutlinedText(ctx, `${product.price} coins`, x + w - 18, y + h / 2, 20, '#ffe8ff', '#4a123c', 'right', 1000, 3)
   button(state, `boost:${product.id}`, x, y, w, h)
 }
 
 function drawShopCosmeticCard(state, item, x, y) {
   const ctx = state.ctx
-  const w = 206
-  const h = 154
+  const w = 214
+  const h = 158
   ctx.save()
   ctx.fillStyle = 'rgba(18, 9, 54, 0.78)'
   roundRect(ctx, x, y, w, h, 18)
@@ -738,7 +643,7 @@ function drawShopCosmeticCard(state, item, x, y) {
   if (item.image?.complete && item.image.naturalWidth > 0) {
     const boxW = w - 28
     const boxH = h - 52
-    const scale = Math.min(boxW / item.image.naturalWidth, boxH / item.image.naturalHeight) * 1.12
+    const scale = Math.min(boxW / item.image.naturalWidth, boxH / item.image.naturalHeight) * 1.22
     const iw = item.image.naturalWidth * scale
     const ih = item.image.naturalHeight * scale
     ctx.drawImage(item.image, x + (w - iw) / 2, y + 12 + (boxH - ih) / 2, iw, ih)
@@ -769,8 +674,8 @@ function drawSettings(state) {
   ctx.restore()
 
   drawOutlinedText(ctx, 'AUDIO', LOGICAL_WIDTH / 2, 336, 30, '#fce76d', '#5e315f', 'center', 1000, 4)
-  drawSettingsToggleRow(state, 'toggleMusic', 74, 410, 'iconMusic', 'MUSIC', state.save.settings.music)
-  drawSettingsToggleRow(state, 'toggleSfx', 74, 498, 'iconVolume', 'SFX', state.save.settings.sfx)
+  drawSettingsToggleRow(state, 'toggleMusic', 78, 416, 'iconMusic', 'MUSIC', state.save.settings.music)
+  drawSettingsToggleRow(state, 'toggleSfx', 78, 500, 'iconVolume', 'SFX', state.save.settings.sfx)
 
   drawOutlinedText(ctx, 'SAVED AUTOMATICALLY', LOGICAL_WIDTH / 2, 700, 20, '#a8fbff', '#234b61', 'center', 1000, 3)
   drawText(ctx, 'Changes apply right away on this device.', LOGICAL_WIDTH / 2, 732, 15, '#d9fbff', 'center', 800)
@@ -778,10 +683,10 @@ function drawSettings(state) {
 
 function drawSettingsToggleRow(state, id, x, y, icon, label, enabled) {
   const ctx = state.ctx
-  const w = 392
+  const w = 384
   const h = 62
-  const border = enabled ? '#a8fbff' : '#ff4fd8'
-  const valueColor = enabled ? '#5cff7b' : '#ff86ce'
+  const border = enabled ? '#a8fbff' : '#ff78ff'
+  const valueColor = enabled ? '#5cff7b' : '#ff9ee8'
 
   ctx.save()
   ctx.fillStyle = 'rgba(18, 9, 54, 0.78)'
@@ -850,66 +755,70 @@ function drawResults(state) {
     state.screen = 'home'
     return
   }
+  run.resultsShownAt ??= state.time
 
   drawResultsSpotlights(state)
   const cx = LOGICAL_WIDTH / 2
 
   const headline = run.completed ? 'RUN COMPLETE' : 'ELIMINATED'
   const headBorder = run.completed ? '#a8fbff' : '#ff4f8a'
-  drawResultsTitlePill(state, cx, 48, headline, headBorder)
 
-  let nextY = 102
+  let nextY
   if (run.completed && run.grade && run.grade !== 'FAILED') {
-    drawMedalSparkles(ctx, cx, nextY + 44, state.time)
-    drawBigResultsMedal(ctx, cx, nextY + 44, run.grade, run.mode === 'stage' ? run.stage?.cardColor : '#a8fbff')
-    nextY = 188
+    drawResultsMedalSprite(state, cx, 210, run.grade)
+    nextY = 384
   } else {
-    drawText(ctx, run.lastMissCause, cx, nextY + 28, 13, '#ffc8e8', 'center', 800)
-    drawText(ctx, run.grade, cx, nextY + 76, 56, gradeColor(run.grade), 'center', 1000)
-    nextY = 188
+    drawText(ctx, run.lastMissCause, cx, 176, 19, '#ffc8e8', 'center', 900)
+    drawOutlinedText(ctx, run.grade, cx, 242, 76, gradeColor(run.grade), '#421139', 'center', 1000, 5)
+    nextY = 318
   }
+  drawResultsTitlePill(state, cx, 42, headline, headBorder)
 
   const cyan = '#a8fbff'
-  const pink = '#ff4fd8'
   const gold = '#ffcc00'
+  const reveal = resultsRevealProgress(state, run)
   const combo = Math.max(1, run.bestCombo || 0)
   const accPct = Math.round((run.accuracy || 0) * 100)
   const perfects = run.hitCounts?.perfect ?? 0
 
-  nextY = drawResultsStatPill(state, nextY, cyan, `FINAL SCORE — ${formatScore(run.score)}`)
-  nextY = drawResultsStatPill(state, nextY, cyan, `BEST COMBO — x${combo}`)
-  nextY = drawResultsStatPill(state, nextY, cyan, `ACCURACY — ${accPct}%`)
-  nextY = drawResultsStatPill(state, nextY, cyan, `PERFECT HITS — ${perfects}`)
+  nextY = drawResultsStatPill(state, nextY, cyan, 'FINAL SCORE', formatScore(animatedInt(run.score, reveal)))
+  nextY = drawResultsStatPill(state, nextY, cyan, 'BEST COMBO', `x${animatedInt(combo, reveal)}`)
+  nextY = drawResultsStatPill(state, nextY, cyan, 'ACCURACY', `${animatedInt(accPct, reveal)}%`)
+  nextY = drawResultsStatPill(state, nextY, cyan, 'PERFECT HITS', String(animatedInt(perfects, reveal)))
+  nextY = drawResultsCoinReward(state, nextY + 16, gold, animatedInt(run.coinsEarned || 0, reveal))
 
-  const rankLine =
-    run.mode === 'endless' && run.leaderboardRank != null
-      ? `LEADERBOARD RANK: #${run.leaderboardRank}`
-      : run.mode === 'stage'
-        ? `STAGE — ${(run.stage?.cardTitle || run.stage?.name || 'STAGE').toUpperCase()}`
-        : 'LEADERBOARD RANK: —'
-  nextY = drawResultsStatPill(state, nextY, pink, rankLine, 'iconTrophy')
-  nextY = drawResultsStatPill(state, nextY, gold, `+${run.coinsEarned || 0} COINS`, 'iconCoin')
-
-  if (!run.ftue) {
-    drawResultsJudgeRow(state, run)
-  }
-
+  const retry = resultsRetryAction(run)
   if (run.ftue) {
-    drawSpriteButton(state, 'ftueContinue', 52, 648, 436, 72, 'buttonCyan', ftueResultButtonLabel(run), 'iconPlay')
-    drawText(ctx, run.completed ? ftueResultLine(run) : 'Beat the stage to continue the tutorial.', cx, 738, 14, '#d9fbff', 'center', 800)
+    if (run.completed) {
+      drawSpriteButton(state, 'tryAgain', 86, 738, 368, 94, retry.sprite, retry.label, retry.icon)
+      drawSpriteButton(state, 'ftueContinue', 150, 850, 240, 62, 'buttonCyan', ftueResultButtonLabel(run), null)
+      return
+    }
+    drawSpriteButton(state, 'ftueContinue', 86, 674, 368, 94, 'buttonPink', ftueResultButtonLabel(run), null)
+    drawSpriteButton(state, 'resultsHome', 150, 790, 240, 62, 'buttonCyan', 'MENU', null)
+    drawText(ctx, 'Try again now or come back from the menu.', cx, 852, 15, '#d9fbff', 'center', 800)
     return
   }
 
-  const retry = resultsRetryAction(run)
-  drawSpriteButton(state, 'tryAgain', 52, 656, 436, 64, retry.sprite, retry.label, retry.icon)
-  drawSpriteButton(state, 'resultsShop', 52, 728, 436, 56, 'buttonGold', 'SHOP', 'iconCoin')
-  drawSpriteButton(state, 'resultsHome', 52, 792, 436, 56, 'buttonCyan', 'BACK TO MENU', null)
-  drawCircleIconButton(state, 'resultsShare', 498, 848, 28, 'iconShare', '#fce76d')
+  const buttonY = run.completed ? 728 : 674
+  drawSpriteButton(state, 'tryAgain', 86, buttonY, 368, 94, retry.sprite, retry.label, retry.icon)
+  drawSpriteButton(state, 'resultsHome', 150, buttonY + 112, 240, 62, 'buttonCyan', 'MENU', null)
+}
+
+function resultsRevealProgress(state, run) {
+  const startedAt = run.resultsShownAt ?? state.time
+  const t = clamp((state.time - startedAt) / 0.95, 0, 1)
+  return 1 - Math.pow(1 - t, 3)
+}
+
+function animatedInt(value, progress) {
+  return Math.round(Math.max(0, value || 0) * progress)
 }
 
 function resultsRetryAction(run) {
-  if (run.mode === 'endless') return { label: 'TRY AGAIN', icon: 'iconInfinity', sprite: 'buttonPink' }
-  return { label: 'RETRY STAGE', icon: 'iconPlay', sprite: 'buttonPink' }
+  if (run.mode === 'stage' && run.completed && gradeRank(run.grade) >= gradeRank('B')) return { label: 'NEXT STAGE', icon: null, sprite: 'buttonCyan' }
+  if (run.mode === 'endless') return { label: 'TRY AGAIN', icon: null, sprite: 'buttonPink' }
+  return { label: 'RETRY STAGE', icon: null, sprite: 'buttonPink' }
 }
 
 function drawResultsSpotlights(state) {
@@ -935,189 +844,101 @@ function drawResultsSpotlights(state) {
 
 function drawResultsTitlePill(state, cx, y, text, border) {
   const ctx = state.ctx
-  const h = 42
+  const h = 56
   ctx.save()
-  ctx.font = '800 20px Fredoka, system-ui, sans-serif'
-  const w2 = Math.min(400, ctx.measureText(text).width + 72)
+  ctx.font = '900 30px Fredoka, system-ui, sans-serif'
+  const w2 = Math.min(430, ctx.measureText(text).width + 92)
   const x2 = cx - w2 / 2
   ctx.shadowBlur = 0
-  ctx.fillStyle = 'rgba(10, 12, 36, 0.9)'
-  roundRect(ctx, x2, y, w2, h, 21)
+  ctx.fillStyle = '#080b2d'
+  roundRect(ctx, x2, y, w2, h, 20)
   ctx.fill()
   ctx.strokeStyle = border
   ctx.lineWidth = 3
-  roundRect(ctx, x2, y, w2, h, 21)
+  roundRect(ctx, x2, y, w2, h, 20)
   ctx.stroke()
   ctx.shadowBlur = 0
   ctx.restore()
-  drawText(ctx, text, cx, y + h / 2, 20, '#ffffff', 'center', 900)
+  drawOutlinedText(ctx, text, cx, y + h / 2, 30, border, '#234b61', 'center', 1000, 4)
 }
 
-function drawMedalSparkles(ctx, cx, cy, time) {
-  for (let i = 0; i < 10; i += 1) {
-    const a = (i / 10) * Math.PI * 2 + time * 1.8
-    const r = 62 + (i % 3) * 5 + Math.sin(time * 4 + i) * 3
-    ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.85)' : 'rgba(200, 240, 255,0.75)'
-    ctx.beginPath()
-    ctx.arc(cx + Math.cos(a) * r, cy + Math.sin(a) * r, 2.2, 0, Math.PI * 2)
-    ctx.fill()
-  }
-}
+function drawResultsMedalSprite(state, cx, cy, grade) {
+  const ctx = state.ctx
+  const image = state.assets.images.medalsSheet
+  const order = ['D', 'C', 'B', 'A', 'S']
+  const index = order.indexOf(String(grade).toUpperCase())
+  if (index < 0) return
 
-function drawBigResultsMedal(ctx, cx, cy, grade, ribbonAccent) {
-  const letter = String(grade).toUpperCase()
-  let metal = '#e6b422'
-  let face = '#ffe98a'
-  if (grade === 'A') {
-    metal = '#c5d2e0'
-    face = '#ffffff'
-  } else if (grade === 'B') {
-    metal = '#b87333'
-    face = '#ffd4a8'
-  } else if (grade === 'S') {
-    metal = '#ffd700'
-    face = '#fff6c2'
-  } else if (grade === 'C' || grade === 'D') {
-    metal = '#8a7a68'
-    face = '#e8ddd0'
-  }
+  const time = state.time
+  const scale = 1 + Math.sin(time * 3.2) * 0.025
 
   ctx.save()
-  ctx.fillStyle = ribbonAccent
-  ctx.globalAlpha = 0.95
-  ctx.beginPath()
-  ctx.moveTo(cx - 22, cy + 40)
-  ctx.lineTo(cx - 8, cy + 10)
-  ctx.lineTo(cx + 8, cy + 10)
-  ctx.lineTo(cx + 22, cy + 40)
-  ctx.closePath()
-  ctx.fill()
-  ctx.globalAlpha = 1
+  ctx.translate(cx, cy)
 
-  ctx.shadowBlur = 0
-  ctx.fillStyle = metal
-  ctx.beginPath()
-  ctx.arc(cx, cy, 44, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.strokeStyle = 'rgba(255,255,255,0.45)'
-  ctx.lineWidth = 3
-  ctx.stroke()
-  ctx.shadowBlur = 0
-
-  ctx.fillStyle = face
-  ctx.beginPath()
-  ctx.arc(cx, cy, 32, 0, Math.PI * 2)
-  ctx.fill()
-
-  ctx.lineWidth = 3
-  ctx.strokeStyle = '#ffffff'
-  ctx.font = '800 38px Fredoka, system-ui, sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.strokeText(letter, cx, cy)
-  ctx.fillStyle = grade === 'S' ? '#ff2fa3' : grade === 'A' ? '#2a7fff' : '#4a3020'
-  ctx.fillText(letter, cx, cy)
+  if (image?.complete && image.naturalWidth > 0) {
+    const cellW = image.naturalWidth / 5
+    const trimX = cellW * 0.07
+    const trimY = image.naturalHeight * 0.08
+    const sourceX = index * cellW + trimX
+    const sourceY = trimY
+    const sourceW = cellW - trimX * 2
+    const sourceH = image.naturalHeight - trimY * 1.75
+    const baseW = grade === 'S' ? 252 : grade === 'A' ? 244 : 232
+    const drawW = baseW * scale
+    const drawH = drawW * (sourceH / sourceW)
+    const centerFix = (RESULT_MEDAL_CENTER_FIX[String(grade).toUpperCase()] || 0) * (drawW / sourceW)
+    ctx.globalCompositeOperation = 'screen'
+    ctx.drawImage(image, sourceX, sourceY, sourceW, sourceH, -drawW / 2 + centerFix, -drawH / 2, drawW, drawH)
+  } else {
+    drawOutlinedText(ctx, String(grade).toUpperCase(), 0, 0, 92, gradeColor(grade), '#421139', 'center', 1000, 5)
+  }
   ctx.restore()
 }
 
-function drawResultsStatPill(state, y, border, line, iconKey = null) {
+function drawResultsStatPill(state, y, border, label, value, iconKey = null) {
   const ctx = state.ctx
-  const cx = LOGICAL_WIDTH / 2
-  const x = 70
-  const w = LOGICAL_WIDTH - 140
-  const h = 36
+  const x = 92
+  const w = 356
+  const h = 48
   ctx.save()
   ctx.shadowBlur = 0
   ctx.fillStyle = 'rgba(10, 12, 40, 0.88)'
-  roundRect(ctx, x, y, w, h, 18)
+  roundRect(ctx, x, y, w, h, 21)
   ctx.fill()
   ctx.strokeStyle = border
-  ctx.lineWidth = 2
-  roundRect(ctx, x, y, w, h, 18)
+  ctx.lineWidth = 3
+  roundRect(ctx, x, y, w, h, 21)
   ctx.stroke()
   ctx.shadowBlur = 0
   ctx.restore()
   const mid = y + h / 2
+  const labelX = iconKey ? x + 58 : x + 22
   if (iconKey) {
-    drawIcon(ctx, state.assets.images[iconKey], x + 14, mid - 12, 24)
-    drawText(ctx, line, cx + 8, mid, 14, '#ffffff', 'center', 800)
-  } else {
-    drawText(ctx, line, cx, mid, 14, '#ffffff', 'center', 800)
+    drawIcon(ctx, state.assets.images[iconKey], x + 18, mid - 15, 30)
   }
-  return y + h + 7
+  drawOutlinedText(ctx, label, labelX, mid, 19, border, '#181238', 'left', 1000, 3)
+  drawOutlinedText(ctx, value, x + w - 22, mid, String(value).length > 12 ? 20 : 25, border, '#181238', 'right', 1000, 3)
+  return y + h + 12
 }
 
-function drawResultsJudgeRow(state, run) {
+function drawResultsCoinReward(state, y, border, coins) {
   const ctx = state.ctx
-  const hostIndex = run.mode === 'stage' ? run.stage?.judgeIndex ?? run.activeJudgeIndex : run.activeJudgeIndex
-  const host = JUDGES[hostIndex] || JUDGES[0]
-  const hostImg = judgeImage(state, host, state.save.equippedSkins[host.id])
-  const bubble = judgeResultsQuip(run)
-
-  const rowY = 468
-  const hostX = 56
-  const hostW = 118
-  const hostH = 132
-
+  const text = `+${coins} COINS`
+  const w = 286
+  const h = 58
+  const x = (LOGICAL_WIDTH - w) / 2
   ctx.save()
-  ctx.shadowBlur = 0
-  roundRect(ctx, hostX, rowY, hostW, hostH, 16)
-  ctx.strokeStyle = host.color
-  ctx.lineWidth = 3
-  ctx.stroke()
-  ctx.shadowBlur = 0
-  ctx.save()
-  roundRect(ctx, hostX + 4, rowY + 4, hostW - 8, hostH - 8, 12)
-  ctx.clip()
-  if (hostImg?.complete && hostImg.naturalWidth > 0) {
-    const sc = Math.max((hostW - 8) / hostImg.naturalWidth, (hostH - 8) / hostImg.naturalHeight)
-    const iw = hostImg.naturalWidth * sc
-    const ih = hostImg.naturalHeight * sc
-    ctx.drawImage(hostImg, hostX + 4 + (hostW - 8 - iw) / 2, rowY + 4 + (hostH - 8 - ih) / 2, iw, ih)
-  }
-  ctx.restore()
-  ctx.restore()
-
-  const bx = hostX + hostW + 10
-  const by = rowY + 8
-  const bw = 200
-  const bh = 44
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'
-  roundRect(ctx, bx, by, bw, bh, 12)
+  ctx.fillStyle = 'rgba(48, 28, 10, 0.9)'
+  roundRect(ctx, x, y, w, h, 24)
   ctx.fill()
-  ctx.strokeStyle = 'rgba(80, 60, 120, 0.35)'
-  ctx.lineWidth = 2
-  roundRect(ctx, bx, by, bw, bh, 12)
+  ctx.strokeStyle = border
+  ctx.lineWidth = 4
+  roundRect(ctx, x, y, w, h, 24)
   ctx.stroke()
-  ctx.beginPath()
-  ctx.moveTo(bx + 14, by + bh)
-  ctx.lineTo(bx + 28, by + bh + 10)
-  ctx.lineTo(bx + 40, by + bh)
-  ctx.fill()
-  drawText(ctx, bubble, bx + bw / 2, by + bh / 2, 13, '#2a1a45', 'center', 900)
-
-  const rings = ['#5cff7b', '#a8fbff', '#ffe24a']
-  let ri = 0
-  for (let i = 0; i < JUDGES.length; i += 1) {
-    if (i === hostIndex) continue
-    const j = JUDGES[i]
-    const img = judgeImage(state, j, state.save.equippedSkins[j.id])
-    const cx = LOGICAL_WIDTH - 52 - ri * 52
-    const cy = rowY + 28 + ri * 8
-    drawHomePortraitCircle(state, cx, cy, 26, rings[ri % rings.length], img)
-    ri += 1
-    if (ri >= 3) break
-  }
-}
-
-function judgeResultsQuip(run) {
-  if (!run.completed) return 'BRUTAL.'
-  const g = run.grade
-  if (g === 'S') return 'ABSOLUTE CINEMA.'
-  if (g === 'A') return 'NOT BAD.'
-  if (g === 'B') return 'SOLID RUN.'
-  if (g === 'C' || g === 'D') return "WE'LL TAKE IT."
-  return 'GG.'
+  ctx.restore()
+  drawIcon(ctx, state.assets.images.iconCoin, x + 30, y + 13, 34)
+  drawOutlinedText(ctx, text, x + 76, y + h / 2, 31, '#fce76d', '#5e315f', 'left', 1000, 4)
+  return y + h + 10
 }
 
 function drawRun(state) {
@@ -1125,10 +946,10 @@ function drawRun(state) {
   const run = state.run
   if (!run) return
 
-  const hitTheme = hitThemeById(state.save.equippedHitTheme)
+  const hitTheme = hitThemeById()
 
   drawRunHud(state)
-  if (run.ftue) drawFtueRunPrompt(state, run)
+  if (run.ftue && run.stage?.id !== 1) drawFtueRunPrompt(state, run)
 
   if (run.status === 'countdown') {
     const number = Math.max(1, Math.ceil(run.startedAt - state.time))
@@ -1142,6 +963,7 @@ function drawRun(state) {
   if (run.status === 'playing') {
     for (const target of run.targets) {
       if (!target.resolved) drawTarget(ctx, target, hitTheme)
+      else if (target.removeAt) drawVanishingTarget(ctx, target, hitTheme, state.time)
     }
   }
 
@@ -1160,37 +982,29 @@ function drawRun(state) {
     const cap = run.caption
     const isNeg = cap.includes('MISS') || cap.includes('OFF')
     const isMilestone = COMBO_MILESTONE_AT.some(
-      (n) => cap.startsWith(`COMBO ${n}`) || cap.startsWith(`${n} —`),
+      (n) => cap.startsWith(`COMBO ${n}`) || cap.startsWith(`${n} -`),
     )
-    const size = isMilestone ? 30 : 36
-    drawText(ctx, cap, LOGICAL_WIDTH / 2, 312, size, isNeg ? '#ff4f9a' : '#fce76d', 'center', 1000)
+    const size = isMilestone ? 52 : 48
+    drawText(ctx, cap, LOGICAL_WIDTH / 2, 224, size, isNeg ? '#ff66bf' : '#fce76d', 'center', 1000)
   }
 
   if (run.status === 'finished') {
     ctx.fillStyle = freeze ? 'rgba(12, 5, 38, 0.42)' : 'rgba(12, 5, 38, 0.58)'
     ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
-    drawText(ctx, run.completed ? 'STAGE CLEAR' : 'ELIMINATED', LOGICAL_WIDTH / 2, 456, 54, run.completed ? '#a8fbff' : '#ff4f9a', 'center', 1000)
-    drawText(ctx, run.lastMissCause, LOGICAL_WIDTH / 2, 514, 18, '#ffffff', 'center', 900)
+    drawText(ctx, run.completed ? 'STAGE CLEAR' : 'ELIMINATED', LOGICAL_WIDTH / 2, 456, 54, run.completed ? '#a8fbff' : '#ff66bf', 'center', 1000)
+    drawText(ctx, run.lastMissCause, LOGICAL_WIDTH / 2, 220, 22, '#ffffff', 'center', 900)
   }
 
   if (run.status === 'continueOffer') {
     const left = Math.max(0, run.continueOfferUntil - state.time)
-    drawSpritePanel(state, 52, 360, 436, 220, 'panelCyan')
-    drawText(ctx, 'CONTINUE?', LOGICAL_WIDTH / 2, 404, 28, '#ffffff', 'center', 1000)
-    drawText(ctx, `${CONTINUE_COST} COINS · 50% HP`, LOGICAL_WIDTH / 2, 442, 16, '#d9fbff', 'center', 900)
-    drawText(ctx, `${Math.ceil(left)}s`, LOGICAL_WIDTH / 2, 476, 36, '#fce76d', 'center', 1000)
-    drawSpriteButton(state, 'continueBuy', 78, 508, 384, 64, 'buttonGold', 'CONTINUE', 'iconCoin')
-    drawSpriteButton(state, 'continueDecline', 78, 582, 384, 58, 'buttonPink', 'GIVE UP', null)
+    drawSpritePanel(state, 36, 252, 468, 470, 'panelCyan')
+    drawOutlinedText(ctx, 'CONTINUE?', LOGICAL_WIDTH / 2, 332, 36, '#ffffff', '#234b61', 'center', 1000, 4)
+    drawText(ctx, `${CONTINUE_COST} COINS - 50% HP`, LOGICAL_WIDTH / 2, 382, 19, '#d9fbff', 'center', 900)
+    drawOutlinedText(ctx, `${Math.ceil(left)}s`, LOGICAL_WIDTH / 2, 442, 50, '#fce76d', '#5e315f', 'center', 1000, 5)
+    drawSpriteButton(state, 'continueBuy', 68, 520, 404, 84, 'buttonGold', 'CONTINUE', 'iconCoin')
+    drawSpriteButton(state, 'continueDecline', 68, 624, 404, 78, 'buttonPink', 'GIVE UP', null)
   }
 
-  if (run.paused && run.status === 'playing') {
-    ctx.fillStyle = 'rgba(12, 5, 38, 0.62)'
-    ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
-    drawText(ctx, 'PAUSED', LOGICAL_WIDTH / 2, 420, 44, '#ffffff', 'center', 1000)
-    drawText(ctx, 'TAP TO RESUME', LOGICAL_WIDTH / 2, 486, 22, '#a8fbff', 'center', 900)
-    drawIcon(ctx, state.assets.images.iconPlay, LOGICAL_WIDTH / 2 - 28, 520, 56)
-    button(state, 'runResume', 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
-  }
 }
 
 function drawFtueRunPrompt(state, run) {
@@ -1206,14 +1020,11 @@ function drawRunHud(state) {
   const run = state.run
   drawRunJudgeCorners(state, run)
 
-  drawOutlinedText(ctx, formatScore(run.score), 100, 48, 38, '#ffffff', '#5e315f', 'left', 1000, 4)
+  drawOutlinedText(ctx, formatScore(run.score), 118, 50, 48, '#ffffff', '#5e315f', 'left', 1000, 5)
 
-  const timeText = run.mode === 'stage' ? `${Math.max(0, Math.ceil(run.duration - run.elapsed))}s` : `${Math.floor(run.elapsed)}s`
-  drawText(ctx, timeText, LOGICAL_WIDTH / 2, 42, 20, '#fce76d', 'center', 1000)
-
-  drawOutlinedText(ctx, `${run.combo}x`, LOGICAL_WIDTH / 2, 884, 36, '#a8fbff', '#234b61', 'center', 1000, 4)
-  drawIcon(ctx, state.assets.images.iconHeart, 166, 918, 28)
-  drawBar(ctx, 202, 925, 170, 15, run.hp / MAX_HP, '#ff4f9a', '#a8fbff')
+  drawOutlinedText(ctx, `${run.combo}x`, LOGICAL_WIDTH / 2, 870, 44, '#a8fbff', '#234b61', 'center', 1000, 4)
+  drawIcon(ctx, state.assets.images.iconHeart, 132, 912, 36)
+  drawBar(ctx, 178, 922, 230, 22, run.hp / MAX_HP, '#ff66bf', '#a8fbff')
 
   let hx = LOGICAL_WIDTH / 2 - 28
   if (run.thisRunDoubleCoins) {
@@ -1223,87 +1034,36 @@ function drawRunHud(state) {
   if (run.thisRunComboShield) {
     drawIcon(ctx, state.assets.images.iconShield, hx, 902, 24)
   }
-  if (run.status === 'playing' && !run.paused) {
-    drawIcon(ctx, state.assets.images.iconPause, LOGICAL_WIDTH / 2 - 17, 64, 34)
-    button(state, 'runPause', LOGICAL_WIDTH / 2 - 31, 50, 62, 62)
-  }
 }
 
 function drawRunJudgeCorners(state, run) {
   const spots = [
-    { x: 48, y: 48 },
-    { x: LOGICAL_WIDTH - 48, y: 48 },
-    { x: 48, y: LOGICAL_HEIGHT - 48 },
-    { x: LOGICAL_WIDTH - 48, y: LOGICAL_HEIGHT - 48 },
+    { x: 58, y: 58 },
+    { x: LOGICAL_WIDTH - 58, y: 58 },
+    { x: 58, y: LOGICAL_HEIGHT - 56 },
+    { x: LOGICAL_WIDTH - 58, y: LOGICAL_HEIGHT - 56 },
   ]
 
   JUDGES.forEach((judge, index) => {
     const skinId = state.save.equippedSkins[judge.id] || 'default'
     const active = index === run.activeJudgeIndex
     const spot = spots[index]
-    drawRunJudgePortrait(state, judge, skinId, spot.x, spot.y, active ? 92 : 82)
+    drawRunJudgePortrait(state, judge, skinId, spot.x, spot.y, active ? 106 : 92, active)
   })
 }
 
-function drawRunJudgePortrait(state, judge, skinId, cx, cy, size) {
+function drawRunJudgePortrait(state, judge, skinId, cx, cy, size, active) {
   const ctx = state.ctx
   const image = judgeImage(state, judge, skinId)
+  ctx.save()
+  ctx.globalAlpha = active ? 1 : 0.48
+  ctx.filter = active ? 'none' : 'grayscale(0.85) saturate(0.55)'
+  ctx.shadowColor = active ? judge.color : 'transparent'
+  ctx.shadowBlur = active ? 16 : 0
   if (image?.complete && image.naturalWidth > 0) {
     ctx.drawImage(image, cx - size / 2, cy - size / 2, size, size)
   }
-}
-
-function judgeMoodMotion(state, run) {
-  const kind = run.judgeMoodKind
-  const live = state.time < run.judgeMoodUntil && kind !== 'idle'
-  if (kind === 'eliminated') {
-    return { scale: 0.96 + Math.sin(state.time * 22) * 0.02, yOff: 2 }
-  }
-  if (!live) return { scale: 1, yOff: 0 }
-  if (kind === 'hype') {
-    return { scale: 1 + Math.sin(state.time * 14) * 0.065, yOff: Math.sin(state.time * 17) * 4 }
-  }
-  if (kind === 'wince') {
-    return { scale: 0.93 + Math.sin(state.time * 20) * 0.02, yOff: 5 }
-  }
-  if (kind === 'nod') {
-    return { scale: 1 + Math.sin(state.time * 9) * 0.04, yOff: -Math.abs(Math.sin(state.time * 7)) * 5 }
-  }
-  return { scale: 1, yOff: 0 }
-}
-
-function drawJudgeHost(state, run) {
-  const ctx = state.ctx
-  const active = JUDGES[run.activeJudgeIndex]
-  const activeSkinId = state.save.equippedSkins[active.id]
-  const image = judgeImage(state, active, activeSkinId)
-  const motion = judgeMoodMotion(state, run)
-  ctx.save()
-  ctx.translate(LOGICAL_WIDTH / 2, 836 + motion.yOff)
-  ctx.scale(motion.scale, motion.scale)
-  ctx.shadowBlur = 0
-  ctx.fillStyle = 'rgba(18, 9, 54, 0.86)'
-  roundRect(ctx, -86, -84, 172, 122, 24)
-  ctx.fill()
-  ctx.strokeStyle = active.color
-  ctx.lineWidth = 5
-  ctx.stroke()
-  drawJudgeImage(ctx, image, -48, -76, 96, 104)
-  drawText(ctx, active.name.toUpperCase(), 0, 54, 13, '#ffffff', 'center', 1000)
   ctx.restore()
-
-  if (run.mode === 'endless') {
-    JUDGES.forEach((judge, index) => {
-      if (index === run.activeJudgeIndex) return
-      const x = 54 + index * 144
-      const mood = run.inactiveMoods[index]
-      const cheering = mood && state.time < mood.until && mood.kind !== 'idle'
-      const bob = cheering ? Math.sin(state.time * 11) * 4 : 0
-      ctx.globalAlpha = 0.34 + (cheering ? 0.24 : 0)
-      drawJudgeImage(ctx, judgeImage(state, judge, state.save.equippedSkins[judge.id]), x, 150 + bob, 52, 68)
-      ctx.globalAlpha = 1
-    })
-  }
 }
 
 function drawTarget(ctx, target, theme) {
@@ -1317,6 +1077,19 @@ function drawTarget(ctx, target, theme) {
     return
   }
   drawTapTarget(ctx, target, progress, theme)
+}
+
+function drawVanishingTarget(ctx, target, theme, time) {
+  const duration = Math.max(0.01, (target.removeAt || time) - (target.vanishStartedAt || time))
+  const t = clamp((time - (target.vanishStartedAt || time)) / duration, 0, 1)
+  const scale = Math.max(0.04, 1 - t)
+  ctx.save()
+  ctx.globalAlpha = 1 - t
+  ctx.translate(target.x, target.y)
+  ctx.scale(scale, scale)
+  ctx.translate(-target.x, -target.y)
+  drawTarget(ctx, target, theme)
+  ctx.restore()
 }
 
 function drawTapTarget(ctx, target, progress, theme) {
@@ -1350,6 +1123,7 @@ function drawSlideTarget(ctx, target, progress, theme) {
   ctx.lineWidth = 18
   drawSliderPath(ctx, target)
   ctx.stroke()
+  drawSlideArrow(ctx, target, s.end)
   if (target.trail?.length > 1) {
     ctx.strokeStyle = s.trail
     ctx.lineWidth = 8
@@ -1365,9 +1139,30 @@ function drawSlideTarget(ctx, target, progress, theme) {
   ctx.restore()
 }
 
+function drawSlideArrow(ctx, target, color) {
+  const mid = pointOnSlider(target, 0.62)
+  const ahead = pointOnSlider(target, 0.7)
+  const angle = Math.atan2(ahead.y - mid.y, ahead.x - mid.x)
+  ctx.save()
+  ctx.translate(mid.x, mid.y)
+  ctx.rotate(angle)
+  ctx.fillStyle = color
+  ctx.strokeStyle = 'rgba(60, 28, 18, 0.7)'
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.moveTo(22, 0)
+  ctx.lineTo(-10, -16)
+  ctx.lineTo(-3, 0)
+  ctx.lineTo(-10, 16)
+  ctx.closePath()
+  ctx.stroke()
+  ctx.fill()
+  ctx.restore()
+}
+
 function drawFailSnapshot(ctx, snap) {
   if (!snap) return
-  const theme = hitThemeById(snap.themeId || 'default')
+  const theme = hitThemeById()
   drawTarget(ctx, snap, theme)
 }
 
@@ -1375,34 +1170,6 @@ function drawSliderPath(ctx, target) {
   ctx.beginPath()
   ctx.moveTo(target.x, target.y)
   ctx.quadraticCurveTo(target.controlX, target.controlY, target.endX, target.endY)
-}
-
-function drawSkinCard(state, judge, skin, x, y) {
-  const ctx = state.ctx
-  const owned = isSkinOwned(state.save, judge.id, skin.id)
-  const equipped = state.save.equippedSkins[judge.id] === skin.id
-  drawSpritePanel(state, x, y, 218, 88, 'footerPurple')
-  drawJudgeImage(ctx, judgeImage(state, judge, skin.id), x + 12, y + 12, 50, 62)
-  drawText(ctx, judge.name.split(' ')[0].toUpperCase(), x + 74, y + 22, 11, '#b5faff', 'left', 900)
-  drawText(ctx, skin.name.toUpperCase(), x + 74, y + 40, 12, '#ffffff', 'left', 1000)
-  drawText(ctx, equipped ? 'EQUIPPED' : owned ? 'EQUIP' : `${skin.price} COINS`, x + 74, y + 62, 12, equipped ? '#fce76d' : owned ? '#a8fbff' : '#ff86ce', 'left', 900)
-  button(state, `skin:${judge.id}:${skin.id}`, x, y, 218, 88)
-}
-
-function drawBoostProductCard(state, product, x, y) {
-  const ctx = state.ctx
-  const ownedLabel =
-    product.kind === 'bank'
-      ? `${state.save.bankedExtraLife || 0} banked`
-      : product.id === 'doubleCoins'
-        ? `${state.save.doubleCoinsRunsRemaining || 0} runs`
-        : `${state.save.comboShieldRunsRemaining || 0} runs`
-  drawSpritePanel(state, x, y, 156, 86, 'footerPurple')
-  drawText(ctx, product.name.toUpperCase(), x + 78, y + 22, 11, '#ffffff', 'center', 1000)
-  drawText(ctx, product.subtitle, x + 78, y + 40, 9, '#b5faff', 'center', 800)
-  drawText(ctx, `${product.price} COINS`, x + 78, y + 58, 11, '#ff86ce', 'center', 900)
-  drawText(ctx, ownedLabel, x + 78, y + 74, 9, '#fce76d', 'center', 800)
-  button(state, `boost:${product.id}`, x, y, 156, 86)
 }
 
 function drawLeaderboardRow(state, row, index, y, h) {
@@ -1430,7 +1197,7 @@ function drawLeaderboardRow(state, row, index, y, h) {
   ctx.lineTo(116, y + h - 11)
   ctx.stroke()
   drawOutlinedText(ctx, row.name, 132, midY, row.name.length > 17 ? 20 : 23, color, '#24124f', 'left', 1000, 3)
-  drawOutlinedText(ctx, formatScore(row.score), 436, midY, 23, index < 3 ? '#ff86ce' : '#fce76d', '#24124f', 'right', 1000, 3)
+  drawOutlinedText(ctx, formatScore(row.score), 436, midY, 23, index < 3 ? '#ff9ee8' : '#fce76d', '#24124f', 'right', 1000, 3)
   drawLeaderboardPortrait(state, row, 480, midY, color, 24)
   ctx.restore()
 }
@@ -1446,13 +1213,13 @@ function drawLeaderboardPlayerRow(state, score, rank, y) {
   ctx.fillStyle = 'rgba(68, 10, 62, 0.86)'
   roundRect(ctx, 38, y, 464, h, h / 2)
   ctx.fill()
-  ctx.strokeStyle = '#ff2fa3'
+  ctx.strokeStyle = '#ff5bd6'
   ctx.lineWidth = 4
   ctx.stroke()
   ctx.shadowBlur = 0
-  drawOutlinedText(ctx, `YOU - #${rank}`, 68, midY, 30, '#ffdaee', '#4a123c', 'left', 1000, 4)
-  drawOutlinedText(ctx, formatScore(score), 438, midY, 25, '#ffdaee', '#4a123c', 'right', 1000, 3)
-  drawLeaderboardPortrait(state, row, 482, midY, '#ff2fa3', 25)
+  drawOutlinedText(ctx, `YOU - #${rank}`, 68, midY, 30, '#ffe8ff', '#4a123c', 'left', 1000, 4)
+  drawOutlinedText(ctx, formatScore(score), 438, midY, 25, '#ffe8ff', '#4a123c', 'right', 1000, 3)
+  drawLeaderboardPortrait(state, row, 482, midY, '#ff5bd6', 25)
   ctx.restore()
 }
 
@@ -1494,15 +1261,6 @@ function leaderboardRows() {
   ]
 }
 
-function drawJudgeLineup(state, y) {
-  const ctx = state.ctx
-  JUDGES.forEach((judge, index) => {
-    const x = 74 + index * 132
-    drawJudgeImage(ctx, judgeImage(state, judge, state.save.equippedSkins[judge.id]), x - 42, y - 58, 84, 112)
-    drawText(ctx, judge.name.split(' ')[0].toUpperCase(), x, y + 70, 11, '#ffffff', 'center', 900)
-  })
-}
-
 function drawCurrencyBar(state) {
   const ctx = state.ctx
   drawSpritePanel(state, 38, 104, 464, 52, 'footerPurple')
@@ -1518,36 +1276,23 @@ function drawHeader(state, title, subtitle) {
   drawText(ctx, subtitle, LOGICAL_WIDTH / 2, 86, 14, '#fce76d', 'center', 900)
 }
 
-function drawBackButton(state) {
-  drawIconButton(state, 'back', 32, 28, 'iconBack', '')
-}
-
 function drawSpriteButton(state, id, x, y, w, h, sprite, label, icon) {
   const ctx = state.ctx
   drawImage(ctx, state.assets.images[sprite], x, y, w, h)
   if (icon) drawIcon(ctx, state.assets.images[icon], x + 22, y + h / 2 - 22, 44)
-  drawText(ctx, label, x + w / 2 + (icon ? 18 : 0), y + h / 2, label.length > 18 ? 17 : 22, '#ffffff', 'center', 1000)
+  drawOutlinedText(ctx, label, x + w / 2 + (icon ? 18 : 0), y + h / 2, label.length > 18 ? 20 : 27, spriteButtonTextColor(sprite), '#2d1648', 'center', 1000, 3)
   button(state, id, x, y, w, h)
 }
 
-function drawIconButton(state, id, x, y, icon, label) {
-  const ctx = state.ctx
-  drawSpritePanel(state, x, y, 96, 70, 'footerPurple')
-  drawIcon(ctx, state.assets.images[icon], x + 25, y + 8, 46)
-  if (label) drawText(ctx, label, x + 48, y + 60, 10, '#ffffff', 'center', 900)
-  button(state, id, x, y, 96, 70)
+function spriteButtonTextColor(sprite) {
+  if (sprite === 'buttonGold') return '#fce76d'
+  if (sprite === 'buttonPink') return '#ff78ff'
+  if (sprite === 'buttonCyan') return '#a8fbff'
+  return '#ffffff'
 }
 
 function drawSpritePanel(state, x, y, w, h, sprite) {
   drawImage(state.ctx, state.assets.images[sprite], x, y, w, h)
-}
-
-function drawSmallStat(ctx, x, y, w, h, label, value) {
-  ctx.fillStyle = 'rgba(11, 7, 43, 0.72)'
-  roundRect(ctx, x, y, w, h, 18)
-  ctx.fill()
-  drawText(ctx, label, x + w / 2, y + 18, 10, '#b5faff', 'center', 800)
-  drawText(ctx, String(value), x + w / 2, y + 40, 19, '#ffffff', 'center', 1000)
 }
 
 function drawBackground(state) {
@@ -1569,6 +1314,8 @@ function drawBackground(state) {
 
 function drawScrollingConfetti(state) {
   const ctx = state.ctx
+  const combo = state.screen === 'run' ? state.run?.combo || 0 : 0
+  const comboBoost = Math.min(1, combo / 100)
   const layers = [
     { image: state.assets.images.confettiLayer1, speed: 24, alpha: 0.26 },
     { image: state.assets.images.confettiLayer2, speed: 38, alpha: 0.32 },
@@ -1585,7 +1332,7 @@ function drawScrollingConfetti(state) {
     const offset = (state.time * layer.speed) % h
 
     ctx.save()
-    ctx.globalAlpha = layer.alpha
+    ctx.globalAlpha = Math.min(0.7, layer.alpha + comboBoost * 0.22)
     for (let y = offset - h; y < LOGICAL_HEIGHT; y += h) {
       ctx.drawImage(image, 0, y, w, h)
     }
@@ -1593,33 +1340,42 @@ function drawScrollingConfetti(state) {
   }
 }
 
-function drawAmbientConfetti(state) {
+function drawFireworks(state) {
+  const fireworks = state.fireworks || []
+  if (!fireworks.length) return
+
+  const image = state.assets.images.fireworkSheet
+  if (!image?.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) return
+
   const ctx = state.ctx
-  const colors = ['#ff3dad', '#a8fbff', '#fce76d', '#7cff5b']
-  for (let i = 0; i < 28; i += 1) {
-    const x = (i * 97 + Math.sin(state.time + i) * 8) % LOGICAL_WIDTH
-    const y = (state.time * (10 + (i % 4) * 4) + i * 53) % LOGICAL_HEIGHT
+  const frameW = image.naturalWidth / FIREWORK_FRAME_COUNT
+  const frameH = image.naturalHeight
+
+  for (const firework of fireworks) {
+    const life = Math.max(0.01, firework.life || 0.75)
+    const progress = clamp(firework.age / life, 0, 0.999)
+    const frame = Math.min(FIREWORK_FRAME_COUNT - 1, Math.floor(progress * FIREWORK_FRAME_COUNT))
+    const fade = progress > 0.74 ? 1 - (progress - 0.74) / 0.26 : 1
+    const size = firework.size || 150
+    const drawW = size
+    const drawH = size * (frameH / frameW)
+
     ctx.save()
-    ctx.translate(x, y)
-    ctx.rotate(state.time + i)
-    ctx.fillStyle = colors[i % colors.length]
-    roundRect(ctx, -4, -2, 8, 4, 2)
-    ctx.fill()
+    ctx.globalAlpha = (firework.alpha ?? 1) * clamp(fade, 0, 1)
+    ctx.globalCompositeOperation = 'screen'
+    ctx.drawImage(
+      image,
+      frame * frameW,
+      0,
+      frameW,
+      frameH,
+      firework.x - drawW / 2,
+      firework.y - drawH / 2,
+      drawW,
+      drawH,
+    )
     ctx.restore()
   }
-}
-
-function drawParticles(state) {
-  const ctx = state.ctx
-  for (const particle of state.particles) {
-    const alpha = 1 - particle.age / particle.life
-    ctx.globalAlpha = alpha
-    ctx.fillStyle = particle.color
-    ctx.beginPath()
-    ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2)
-    ctx.fill()
-  }
-  ctx.globalAlpha = 1
 }
 
 function drawToast(state) {
@@ -1701,18 +1457,8 @@ function gradeColor(grade) {
   if (grade === 'A') return '#7cff5b'
   if (grade === 'B') return '#fce76d'
   if (grade === 'C') return '#ffb347'
-  if (grade === 'FAILED') return '#ff4f9a'
-  return '#ff86ce'
-}
-
-function stageKindLabel(stage) {
-  if (stage.kinds.length > 1) return 'MIXED RHYTHM'
-  return stage.kinds[0].toUpperCase()
-}
-
-function stageGradeLabel(grade) {
-  if (!grade) return '-'
-  return grade === 'FAILED' ? 'FAIL' : grade
+  if (grade === 'FAILED') return '#ff66bf'
+  return '#ff9ee8'
 }
 
 function formatScore(score) {
@@ -1721,12 +1467,15 @@ function formatScore(score) {
 
 function ftuePrompt(run) {
   if (run.stage.id === 1) {
-    return { title: 'SLIDE LESSON', body: 'Press GO, drag along the path, release on END.' }
+    return { title: 'TAP LESSON', body: 'Tap when the outer ring meets the target.' }
   }
   if (run.stage.id === 2) {
-    return { title: 'HOLD LESSON', body: 'Press, hold while the ring fills, release on time.' }
+    return { title: 'SLIDE LESSON', body: 'Press GO, drag along the path, release on END.' }
   }
   if (run.stage.id === 3) {
+    return { title: 'HOLD LESSON', body: 'Press, hold while the ring fills, release on time.' }
+  }
+  if (run.stage.id === 4) {
     return { title: 'MIXED PRESSURE', body: 'Tap, slide, and hold. Misses cost HP.' }
   }
   return { title: 'CHAOS FINALE', body: 'Survive the mix to unlock the full home screen.' }
@@ -1734,12 +1483,7 @@ function ftuePrompt(run) {
 
 function ftueResultButtonLabel(run) {
   if (!run.completed) return 'TRY AGAIN'
-  return run.stage.id >= STAGES[STAGES.length - 1].id ? 'FINISH' : 'NEXT STAGE'
-}
-
-function ftueResultLine(run) {
-  if (run.stage.id >= STAGES[STAGES.length - 1].id) return 'Tutorial complete. Endless and the full home screen are ready.'
-  return `Stage ${run.stage.id + 1} is next.`
+  return 'MENU'
 }
 
 function roundRect(ctx, x, y, width, height, radius) {
