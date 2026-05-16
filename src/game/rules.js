@@ -7,16 +7,21 @@ export const HIT_QUALITY_VALUE = { perfect: 1, good: 0.75, okay: 0.45, miss: 0 }
 export const HIT_LABELS = { perfect: 'PERFECT', good: 'GOOD', okay: 'OKAY', miss: 'MISS' }
 
 const ASSET_BASE = import.meta.env.BASE_URL
-const JUDGE_MUSIC_SRC = `${ASSET_BASE}audio/goofy.ogg`
+const JUDGE_MUSIC_SRC = {
+  blingbeak: `${ASSET_BASE}audio/blingbeak_long_ride.ogg`,
+  disco: `${ASSET_BASE}audio/disco_ataca.ogg`,
+  coolman: `${ASSET_BASE}audio/coolman_too_much_burrito.ogg`,
+  dj: `${ASSET_BASE}audio/dj_baby_baby_sped_up.ogg`,
+}
 
 export const JUDGES = [
   {
     id: 'blingbeak',
     name: 'BlingBeak',
     title: 'Beat Inspector',
-    color: '#ff5bd6',
+    color: '#ff4ff0',
     imageSrc: `${ASSET_BASE}characters/BlingBeak.png`,
-    musicSrc: JUDGE_MUSIC_SRC,
+    musicSrc: JUDGE_MUSIC_SRC.blingbeak,
     skins: [
       { id: 'default', name: 'BlingBeak', price: 0, imageSrc: `${ASSET_BASE}characters/BlingBeak.png` },
       { id: 'partyhat', name: 'Partyhat', price: 1000, imageSrc: `${ASSET_BASE}characters/Partyhat.png` },
@@ -29,7 +34,7 @@ export const JUDGES = [
     title: 'Combo Prophet',
     color: '#70f66b',
     imageSrc: `${ASSET_BASE}characters/Disco.png`,
-    musicSrc: JUDGE_MUSIC_SRC,
+    musicSrc: JUDGE_MUSIC_SRC.disco,
     skins: [
       { id: 'default', name: 'Disco', price: 0, imageSrc: `${ASSET_BASE}characters/Disco.png` },
       { id: 'headband', name: 'Headband', price: 1500, imageSrc: `${ASSET_BASE}characters/Headband.png` },
@@ -42,7 +47,7 @@ export const JUDGES = [
     title: 'Gold Standard',
     color: '#a8fbff',
     imageSrc: `${ASSET_BASE}characters/CoolMan.png`,
-    musicSrc: JUDGE_MUSIC_SRC,
+    musicSrc: JUDGE_MUSIC_SRC.coolman,
     skins: [
       { id: 'default', name: 'CoolMan', price: 0, imageSrc: `${ASSET_BASE}characters/CoolMan.png` },
       { id: 'king', name: 'King', price: 800, imageSrc: `${ASSET_BASE}characters/King.png` },
@@ -55,7 +60,7 @@ export const JUDGES = [
     title: 'Chaos Curator',
     color: '#ffce24',
     imageSrc: `${ASSET_BASE}characters/DJ.png`,
-    musicSrc: JUDGE_MUSIC_SRC,
+    musicSrc: JUDGE_MUSIC_SRC.dj,
     skins: [
       { id: 'default', name: 'DJ', price: 0, imageSrc: `${ASSET_BASE}characters/DJ.png` },
       { id: 'punk', name: 'Punk', price: 2000, imageSrc: `${ASSET_BASE}characters/Punk.png` },
@@ -68,10 +73,10 @@ export const JUDGES = [
 export const DEFAULT_HIT_THEME = {
   id: 'default',
   name: 'Neon Arena',
-  ringTap: { outer: '#a8fbff', inner: '#ff65e6', label: '#171236' },
-  ringSlide: { path: '#a8fbff', pathDim: 'rgba(255, 255, 255, 0.86)', start: '#ff65e6', end: '#fce76d', trail: '#ffffff' },
+  ringTap: { outer: '#a8fbff', inner: '#ff4ff0', label: '#171236' },
+  ringSlide: { path: '#a8fbff', pathDim: 'rgba(255, 255, 255, 0.86)', start: '#ff4ff0', end: '#fce76d', trail: '#ffffff' },
   ringHold: { fill: '#fce76d', arc: '#a8fbff', label: '#171236' },
-  burst: { perfect: '#a8fbff', good: '#ffd22e', okay: '#ff8ee5' },
+  burst: { perfect: '#a8fbff', good: '#ffd22e', okay: '#ff8af5' },
   milestoneBurstScale: 1.35,
 }
 
@@ -143,7 +148,7 @@ export const STAGES = [
     id: 1,
     name: 'Tap Lesson',
     cardTitle: 'TAP LIKE A STAR',
-    cardColor: '#ff78ff',
+    cardColor: '#ff4ff0',
     duration: 45,
     kinds: ['tap'],
     difficulty: 0.08,
@@ -261,13 +266,24 @@ export function difficultyProfile(run) {
   const elapsed = run.elapsed
   const tier = run.mode === 'endless' ? Math.floor(elapsed / 30) : 0
   const stageBoost = run.mode === 'stage' ? run.stage.difficulty : 0
+  if (run.ftue && run.stage?.id === 1 && run.spawnCount < 12) {
+    return {
+      tier,
+      ramp: 0,
+      spawnInterval: 1.45,
+      approach: 1.38,
+      slideTolerance: 58,
+      holdDuration: 0.82,
+      maxLiveTargets: 1,
+    }
+  }
   const ramp = Math.min(1, tier * 0.14 + elapsed / 180 + stageBoost)
   return {
     tier,
     ramp,
     spawnInterval: lerp(1.25, 0.52, ramp),
     approach: lerp(1.18, 0.62, ramp),
-    slideTolerance: lerp(58, 36, ramp),
+    slideTolerance: lerp(68, 44, ramp),
     holdDuration: lerp(0.82, 1.28, ramp),
     maxLiveTargets: run.mode === 'stage' && run.stage.id < 5 ? 1 : Math.min(1 + Math.floor(ramp * 3), 4),
   }

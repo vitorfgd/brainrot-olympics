@@ -18,19 +18,45 @@ import {
 } from './rules.js'
 import { finishRun, openContinueOffer, persistSave } from './state.js'
 import { activeMoodForHit, inactiveCheerMood } from './judgeReactions.js'
+import { emitEffect } from './effects.js'
 
 const TARGET_RADIUS = 44
 const MISS_WINDOW = 0.35
+const SPAWN_PREVIEW_LEAD = 0.56
+const SLIDE_OFF_PATH_GRACE = 0.28
+const HOLD_RELEASE_CUE_WINDOW = 0.24
+const FTUE_GUIDED_TAP_POINTS = [
+  { x: 270, y: 472 },
+  { x: 204, y: 438 },
+  { x: 336, y: 438 },
+  { x: 270, y: 540 },
+  { x: 170, y: 510 },
+  { x: 370, y: 510 },
+  { x: 222, y: 610 },
+  { x: 318, y: 610 },
+  { x: 270, y: 408 },
+  { x: 178, y: 560 },
+  { x: 362, y: 560 },
+  { x: 270, y: 650 },
+]
 
 export function updateRun(state) {
   const run = state.run
   if (!run) return
 
   if (run.status === 'countdown') {
+    const tick = Math.max(1, Math.ceil(run.startedAt - state.time))
+    if (run.lastCountdownTick !== tick) {
+      run.lastCountdownTick = tick
+      state.assets.playSfx('countdownTick', state.save.settings.sfx)
+    }
     if (state.time >= run.startedAt) {
       run.status = 'playing'
       run.nextSpawnAt = state.time + 0.2
+      run.goStartedAt = state.time
+      run.goUntil = state.time + 0.62
       showCaption(state, run, 'GO!')
+      state.assets.playSfx('countdownTick', state.save.settings.sfx, 1.15)
     }
     return
   }
@@ -51,8 +77,13 @@ export function updateRun(state) {
 
   const profile = difficultyProfile(run)
   const liveTargets = run.targets.filter((target) => !target.resolved).length
+  if (state.time >= run.nextSpawnAt - SPAWN_PREVIEW_LEAD && liveTargets < profile.maxLiveTargets) {
+    prepareUpcomingTarget(run, profile, state.time)
+  }
   if (state.time >= run.nextSpawnAt && liveTargets < profile.maxLiveTargets) {
-    spawnTarget(run, profile)
+    const target = spawnTarget(run, profile)
+    if (isFtueTapOpening(run) && target.id === 0) showCaption(state, run, 'TAP', 1.1)
+    state.assets.playSfx('targetSpawn', state.save.settings.sfx)
     run.nextSpawnAt = state.time + profile.spawnInterval
   }
 
@@ -61,6 +92,10 @@ export function updateRun(state) {
     target.age += state.deltaTime
     if (target.kind === 'hold' && target.holding) {
       target.heldFor += state.deltaTime
+      if (!target.releaseCueShown && shouldShowHoldReleaseCue(target)) {
+        target.releaseCueShown = true
+        showCaption(state, run, 'RELEASE', 0.5)
+      }
     }
     if (target.age > target.deadline) {
       resolveHit(state, target, 'miss', 'MISSED THE BEAT')
@@ -121,7 +156,7 @@ export function handleRunPointerMove(state) {
   const nearest = nearestSliderProgress(target, state.pointer.x, state.pointer.y)
   if (nearest.distance > target.tolerance) {
     target.offPathFor += state.deltaTime
-    if (target.offPathFor > 0.2) {
+    if (target.offPathFor > SLIDE_OFF_PATH_GRACE) {
       resolveHit(state, target, 'miss', 'LEFT THE PATH')
       run.activeTargetId = null
       return
@@ -134,7 +169,7 @@ export function handleRunPointerMove(state) {
   target.trail.push({ x: state.pointer.x, y: state.pointer.y })
   if (target.trail.length > 18) target.trail.shift()
 
-  if (distance(state.pointer.x, state.pointer.y, target.endX, target.endY) <= TARGET_RADIUS * 1.1 && target.progress > 0.68) {
+  if (distance(state.pointer.x, state.pointer.y, target.endX, target.endY) <= TARGET_RADIUS * 1.25 && target.progress > 0.6) {
     const quality = qualityFromTiming(target.age - target.approach)
     resolveHit(state, target, quality, quality === 'miss' ? 'OFF BEAT' : `${HIT_LABELS[quality]} SLIDE`)
     run.activeTargetId = null
@@ -162,8 +197,9 @@ export function handleRunPointerUp(state) {
 }
 
 export function spawnTarget(run, profile) {
-  const kind = resolveTargetKind(run)
-  const point = chooseTargetPoint(run)
+  const upcoming = run.upcomingTarget
+  const kind = upcoming?.kind || resolveTargetKind(run)
+  const point = upcoming?.point || chooseTargetPoint(run)
   const target = {
     id: run.spawnCount,
     kind,
@@ -194,13 +230,31 @@ export function spawnTarget(run, profile) {
       holdDuration: profile.holdDuration,
       heldFor: 0,
       holding: false,
+      releaseCueShown: false,
       deadline: profile.holdDuration + profile.approach + 0.45,
     })
   }
 
   run.targets.push(target)
+  run.upcomingTarget = null
   run.spawnCount += 1
   run.totalNotes += 1
+  return target
+}
+
+function shouldShowHoldReleaseCue(target) {
+  return target.heldFor >= target.holdDuration - HOLD_RELEASE_CUE_WINDOW
+}
+
+function prepareUpcomingTarget(run, profile, time) {
+  if (run.upcomingTarget) return
+  run.upcomingTarget = {
+    kind: resolveTargetKind(run),
+    point: chooseTargetPoint(run),
+    createdAt: time,
+    spawnAt: run.nextSpawnAt,
+    approach: profile.approach,
+  }
 }
 
 export function pointOnSlider(target, progress) {
@@ -268,6 +322,7 @@ function resolveHit(state, target, quality, caption) {
     run.comboShieldConsumed = true
     target.resolved = true
     target.removed = false
+    target.hitQuality = 'shield'
     target.vanishStartedAt = state.time
     target.removeAt = state.time + 0.18
     run.resolvedNotes += 1
@@ -276,11 +331,13 @@ function resolveHit(state, target, quality, caption) {
     applyMood(state, run, activeMoodForHit('miss', false))
     run.caption = 'SHIELDED!'
     run.captionUntil = state.time + 0.75
+    playHitSfx(state, 'shield')
     return
   }
 
   target.resolved = true
   target.removed = false
+  target.hitQuality = quality
   target.vanishStartedAt = state.time
   target.removeAt = state.time + 0.18
   run.resolvedNotes += 1
@@ -288,18 +345,23 @@ function resolveHit(state, target, quality, caption) {
   run.accuracyPoints += HIT_QUALITY_VALUE[quality]
 
   if (quality === 'miss') {
+    playHitSfx(state, quality)
     applyMood(state, run, activeMoodForHit('miss', false))
     run.combo = 0
-    run.hp = clamp(run.hp + hpDeltaForHit(quality), 0, MAX_HP)
-    run.caption = caption
-    run.captionUntil = state.time + 0.85
+    const forgiven = shouldForgiveFtueMiss(run)
+    if (forgiven) run.ftueFirstMissForgiven = true
+    else applyHpDelta(state, run, hpDeltaForHit(quality))
+    run.caption = forgiven ? 'WATCH THE RING' : caption
+    run.captionUntil = state.time + (forgiven ? 1.15 : 0.85)
     run.internalMissCause = caption
-    if (run.hp <= 0) {
+    if (!forgiven && run.hp <= 0) {
       if ((state.save.bankedExtraLife || 0) > 0 && !run.extraLifeUsedThisRun) {
         state.save.bankedExtraLife -= 1
         persistSave(state.save)
         run.extraLifeUsedThisRun = true
+        const heal = MAX_HP - run.hp
         run.hp = MAX_HP
+        pulseHp(state, run, heal)
         showCaption(state, run, 'EXTRA LIFE!', 1.1)
         return
       }
@@ -312,6 +374,9 @@ function resolveHit(state, target, quality, caption) {
   const nextCombo = run.combo + 1
   const gained = scoreForHit(quality, nextCombo)
   run.score += gained
+  if (quality === 'perfect') {
+    emitEffect(state, { type: 'hitStop', startedAt: state.time, until: state.time + 0.055 })
+  }
   if (quality === 'okay' || quality === 'perfect') {
     run.shakeStartedAt = state.time
     run.shakeUntil = state.time + (quality === 'perfect' ? 0.18 : 0.11)
@@ -319,7 +384,7 @@ function resolveHit(state, target, quality, caption) {
   }
   run.combo = nextCombo
   run.bestCombo = Math.max(run.bestCombo, run.combo)
-  run.hp = clamp(run.hp + hpDeltaForHit(quality), 0, MAX_HP)
+  applyHpDelta(state, run, hpDeltaForHit(quality))
 
   const isMilestone = COMBO_MILESTONE_AT.includes(nextCombo)
   const milestoneMood = activeMoodForHit(quality, isMilestone)
@@ -332,11 +397,50 @@ function resolveHit(state, target, quality, caption) {
     run.caption = milestoneCalloutText(nextCombo)
     run.captionUntil = state.time + 1.48
     run.milestoneFlashUntil = state.time + 0.2
-    state.assets.playSfx('milestone', state.save.settings.sfx)
+    state.assets.playSfx(nextCombo === 10 ? 'combo10' : 'combo25Plus', state.save.settings.sfx)
+    state.assets.playSfx('judgeReactPositive', state.save.settings.sfx, 0.6)
   } else {
-    run.caption = caption
+    playHitSfx(state, quality)
+    run.caption = ftueHitCaption(run, quality, caption)
     run.captionUntil = state.time + 0.85
   }
+}
+
+function isFtueTapOpening(run) {
+  return run.ftue && run.stage?.id === 1 && run.spawnCount <= FTUE_GUIDED_TAP_POINTS.length
+}
+
+function shouldForgiveFtueMiss(run) {
+  return run.ftue && run.stage?.id === 1 && !run.ftueFirstMissForgiven
+}
+
+function ftueHitCaption(run, quality, fallback) {
+  if (!run.ftue || run.stage?.id !== 1) return fallback
+  if (quality === 'perfect') return 'PERFECT!'
+  if (quality === 'good') return 'GOOD!'
+  if (quality === 'okay') return 'OKAY!'
+  return fallback
+}
+
+function playHitSfx(state, quality) {
+  const key = quality === 'okay' || quality === 'shield' ? 'hitOkay' : quality === 'miss' ? 'hitMiss' : 'hitGood'
+  state.assets.playSfx(key, state.save.settings.sfx)
+}
+
+function applyHpDelta(state, run, delta) {
+  const before = run.hp
+  run.hp = clamp(run.hp + delta, 0, MAX_HP)
+  pulseHp(state, run, run.hp - before)
+}
+
+function pulseHp(state, run, delta) {
+  if (!delta) return
+  emitEffect(state, {
+    type: 'hpPulse',
+    startedAt: state.time,
+    until: state.time + 0.34,
+    color: delta > 0 ? '#a8fbff' : '#ff4ff0',
+  })
 }
 
 function updateEndlessJudge(state) {
@@ -368,6 +472,9 @@ function findTargetAt(run, x, y) {
 }
 
 function chooseTargetPoint(run) {
+  if (run.ftue && run.stage?.id === 1 && run.spawnCount < FTUE_GUIDED_TAP_POINTS.length) {
+    return FTUE_GUIDED_TAP_POINTS[run.spawnCount]
+  }
   const margin = TARGET_RADIUS + 34
   let best = {
     x: margin + Math.random() * (LOGICAL_WIDTH - margin * 2),
@@ -390,10 +497,23 @@ function chooseTargetPoint(run) {
 
 function createSliderPath(start, profile) {
   const length = 150 + profile.ramp * 95
-  const angle = Math.random() * Math.PI * 2
-  const end = {
-    x: clamp(start.x + Math.cos(angle) * length, 70, LOGICAL_WIDTH - 70),
-    y: clamp(start.y + Math.sin(angle) * length, PLAY_TOP + 70, PLAY_BOTTOM - 70),
+  const minGap = 170
+  let end = null
+  for (let i = 0; i < 12; i += 1) {
+    const angle = Math.random() * Math.PI * 2
+    const candidate = {
+      x: clamp(start.x + Math.cos(angle) * length, 70, LOGICAL_WIDTH - 70),
+      y: clamp(start.y + Math.sin(angle) * length, PLAY_TOP + 70, PLAY_BOTTOM - 70),
+    }
+    end = candidate
+    if (distance(start.x, start.y, candidate.x, candidate.y) >= minGap) break
+  }
+  if (distance(start.x, start.y, end.x, end.y) < minGap) {
+    const awayFromCenter = Math.atan2(start.y - (PLAY_TOP + PLAY_BOTTOM) / 2, start.x - LOGICAL_WIDTH / 2)
+    end = {
+      x: clamp(start.x + Math.cos(awayFromCenter) * minGap, 70, LOGICAL_WIDTH - 70),
+      y: clamp(start.y + Math.sin(awayFromCenter) * minGap, PLAY_TOP + 70, PLAY_BOTTOM - 70),
+    }
   }
   const dx = end.x - start.x
   const dy = end.y - start.y
@@ -419,13 +539,12 @@ function nearestSliderProgress(target, x, y) {
 }
 
 function spawnHitFirework(state, x, y, quality, milestoneExtra) {
-  state.fireworks ??= []
   const baseSize = quality === 'perfect' ? 190 : quality === 'good' ? 158 : 132
-  state.fireworks.push({
+  emitEffect(state, {
+    type: 'firework',
     x,
     y,
     size: baseSize * (milestoneExtra ? 1.22 : 1),
-    age: 0,
     life: quality === 'perfect' ? 0.86 : 0.72,
     alpha: quality === 'okay' ? 0.78 : 0.96,
     hit: true,

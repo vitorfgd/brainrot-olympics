@@ -13,10 +13,12 @@ import {
   startStageRun,
 } from './state.js'
 import { handleRunPointerDown, handleRunPointerMove, handleRunPointerUp, updateRun } from './targets.js'
+import { applyQueuedEffects } from './effects.js'
 
 export function updateGame(state) {
   updateFireworks(state)
   updateRun(state)
+  applyQueuedEffects(state)
 
   const run = state.run
   if (run?.status === 'continueOffer' && state.time >= run.continueOfferUntil) {
@@ -32,17 +34,23 @@ export function updateGame(state) {
     run.resultsShownAt = state.time
     state.screen = 'results'
   }
+
+  updateResultsSfx(state)
+  syncMenuMusic(state)
 }
 
 export function handlePointerDown(state) {
+  state.assets.unlockAudio?.()
   const button = findButton(state)
 
   if (state.screen === 'run' && state.run?.status === 'continueOffer') {
     if (button?.id === 'continueBuy') {
+      playClick(state)
       acceptContinue(state)
       return
     }
     if (button?.id === 'continueDecline') {
+      playCancelClick(state)
       declineContinue(state)
       return
     }
@@ -51,18 +59,22 @@ export function handlePointerDown(state) {
 
   if (state.screen === 'boostSelect') {
     if (button?.id === 'boostToggleDouble') {
+      playClick(state)
       state.boostSelectUseDoubleCoins = !state.boostSelectUseDoubleCoins
       return
     }
     if (button?.id === 'boostToggleShield') {
+      playClick(state)
       state.boostSelectUseComboShield = !state.boostSelectUseComboShield
       return
     }
     if (button?.id === 'boostSelectGo') {
+      playClick(state)
       commitBoostSelection(state)
       return
     }
     if (button?.id === 'boostSelectCancel') {
+      playCancelClick(state)
       cancelBoostSelection(state)
       return
     }
@@ -75,6 +87,10 @@ export function handlePointerDown(state) {
   }
 
   if (!button) return
+  if (!isToggleButton(button.id)) {
+    if (isCancelButton(button.id)) playCancelClick(state)
+    else playClick(state)
+  }
 
   if (button.id === 'playEndless') {
     if (!isEndlessUnlocked(state.save)) {
@@ -131,15 +147,20 @@ export function handlePointerDown(state) {
     return
   }
   if (button.id === 'toggleMusic') {
-    state.save.settings.music = !state.save.settings.music
+    const enabled = !state.save.settings.music
+    playToggleClick(state, enabled)
+    state.save.settings.music = enabled
     state.assets.setMusicEnabled(state.save.settings.music)
     persistSave(state.save)
     showToast(state, `Music ${state.save.settings.music ? 'on' : 'off'}`)
     return
   }
   if (button.id === 'toggleSfx') {
-    state.save.settings.sfx = !state.save.settings.sfx
+    const enabled = !state.save.settings.sfx
+    if (!enabled) playToggleClick(state, enabled)
+    state.save.settings.sfx = enabled
     persistSave(state.save)
+    if (enabled) playToggleClick(state, enabled)
     showToast(state, `SFX ${state.save.settings.sfx ? 'on' : 'off'}`)
     return
   }
@@ -188,6 +209,54 @@ function findButton(state) {
     }
   }
   return null
+}
+
+function playClick(state) {
+  state.assets.playSfx('click', state.save.settings.sfx)
+}
+
+function playCancelClick(state) {
+  state.assets.playSfx('cancelClick', state.save.settings.sfx)
+}
+
+function playToggleClick(state, enabled) {
+  state.assets.playSfx(enabled ? 'click' : 'cancelClick', state.save.settings.sfx)
+}
+
+function isCancelButton(id) {
+  return id === 'back' || id === 'resultsHome'
+}
+
+function isToggleButton(id) {
+  return id === 'toggleMusic' || id === 'toggleSfx'
+}
+
+function syncMenuMusic(state) {
+  if (isMenuMusicScreen(state.screen)) state.assets.startMenuMusic(state.save.settings.music)
+  else state.assets.stopMenuMusic()
+}
+
+function isMenuMusicScreen(screen) {
+  return screen === 'home' || screen === 'leaderboard' || screen === 'stageSelect' || screen === 'shop' || screen === 'settings' || screen === 'boostSelect' || screen === 'results'
+}
+
+function updateResultsSfx(state) {
+  const run = state.screen === 'results' ? state.run : null
+  if (!run?.resultsShownAt) return
+  run.resultsSfx ??= {}
+  const elapsed = state.time - run.resultsShownAt
+  playResultSfxAt(state, run, elapsed, 'title', 0, 'gradeReveal')
+  if (run.completed && run.grade !== 'FAILED') {
+    playResultSfxAt(state, run, elapsed, 'medal', 0.16, 'medalPop')
+    playResultSfxAt(state, run, elapsed, 'stats', 0.42, 'coinCountTick')
+    playResultSfxAt(state, run, elapsed, 'coins', 0.96, 'coinRewardBurst')
+  }
+}
+
+function playResultSfxAt(state, run, elapsed, id, at, sfx) {
+  if (run.resultsSfx[id] || elapsed < at) return
+  run.resultsSfx[id] = true
+  state.assets.playSfx(sfx, state.save.settings.sfx)
 }
 
 function updateFireworks(state) {

@@ -63,6 +63,7 @@ export function createGameState(canvas, ctx, assets) {
     ui: { buttons: [] },
     save,
     run: null,
+    effects: [],
     fireworks: [],
     nextAmbientFireworkAt: 0,
     toast: null,
@@ -133,6 +134,9 @@ export function startRun(state, options) {
     status: 'countdown',
     countdownStartedAt: state.time,
     startedAt: state.time + 3,
+    lastCountdownTick: 0,
+    goStartedAt: 0,
+    goUntil: 0,
     elapsed: 0,
     duration: options.duration,
     completed: false,
@@ -155,6 +159,7 @@ export function startRun(state, options) {
     accuracyPoints: 0,
     hitCounts: { perfect: 0, good: 0, okay: 0, miss: 0 },
     targets: [],
+    upcomingTarget: null,
     activeTargetId: null,
     nextSpawnAt: state.time + 3.3,
     spawnCount: 0,
@@ -167,12 +172,14 @@ export function startRun(state, options) {
     thisRunComboShield: useShield,
     comboShieldConsumed: false,
     extraLifeUsedThisRun: false,
+    ftueFirstMissForgiven: false,
     failSnapshot: null,
     continueOfferUntil: 0,
     continueDeclineCause: '',
     internalMissCause: '',
   }
   state.screen = 'run'
+  state.effects = []
   state.fireworks = []
   state.nextAmbientFireworkAt = state.time + 1.2
   state.assets.startMusic(judge, state.save.settings.music)
@@ -192,8 +199,12 @@ export function finishRun(state, completed, cause = 'OUT OF SYNC', opts = {}) {
   run.judgeMoodKind = completed ? 'hype' : 'eliminated'
   run.judgeMoodUntil = state.time + 120
   state.assets.stopMusic()
-  if (!completed && !opts.skipScratch) {
-    state.assets.playSfx('scratch', state.save.settings.sfx)
+  if (completed) {
+    state.assets.playSfx('stageClear', state.save.settings.sfx)
+    state.assets.playSfx('judgeReactPositive', state.save.settings.sfx, 0.7)
+  } else if (!opts.skipScratch) {
+    state.assets.playSfx('runFailed', state.save.settings.sfx)
+    state.assets.playSfx('judgeReactNegative', state.save.settings.sfx, 0.75)
   }
 }
 
@@ -211,7 +222,7 @@ export function openContinueOffer(state, internalCause, failSnapshot) {
   run.failSnapshot = failSnapshot
   run.targets = []
   run.activeTargetId = null
-  state.assets.playSfx('scratch', state.save.settings.sfx)
+  state.assets.playSfx('hitMiss', state.save.settings.sfx)
   state.assets.stopMusic()
 }
 
@@ -237,6 +248,7 @@ export function declineContinue(state) {
   const run = state.run
   if (!run || run.status !== 'continueOffer') return
   finishRun(state, false, run.continueDeclineCause, { alreadyStamped: true, skipScratch: true })
+  run.resultReadyAt = state.time
 }
 
 export function beginRunWithBoostFlow(state, intent) {
@@ -323,6 +335,7 @@ export function buyOrEquipSkin(state, judgeId, skinId) {
     }
     state.save.coins -= skin.price
     state.save.ownedSkins[judgeId].push(skinId)
+    state.assets.playSfx('purchaseSuccess', state.save.settings.sfx)
     showToast(state, `${skin.name} unlocked`)
   }
 
@@ -338,6 +351,7 @@ export function buyBoostProduct(state, productId) {
     return
   }
   state.save.coins -= product.price
+  state.assets.playSfx('purchaseSuccess', state.save.settings.sfx)
   if (product.kind === 'bank') {
     state.save.bankedExtraLife = (state.save.bankedExtraLife || 0) + 1
     showToast(state, 'Extra life banked')
