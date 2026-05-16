@@ -277,6 +277,14 @@ export interface RenderState {
   save: RenderSaveState;
   judges: RenderJudgeState[];
   stages: RenderStageState[];
+  home: RenderHomeState;
+  levels: RenderLevelsState;
+  leaderboard: RenderLeaderboardState;
+  shop: RenderShopState;
+  settings: RenderSettingsState;
+  boostSelect: RenderBoostSelectState | null;
+  results: RenderResultsState | null;
+  runHud: RenderRunHudState | null;
   run: RenderRunState | null;
   toast: ToastState | null;
   uiButtons: UiButton[];
@@ -286,15 +294,25 @@ export interface RenderSaveState {
   coins: number;
   highScore: number;
   ftueCompleted: boolean;
+  stageBests: Record<number, StageBest>;
+  ownedSkins: Record<JudgeId, string[]>;
+  equippedSkins: Record<JudgeId, string>;
+  bankedExtraLife: number;
+  doubleCoinsRunsRemaining: number;
+  comboShieldRunsRemaining: number;
   settings: SettingsState;
 }
 
 export interface RenderJudgeState {
   id: JudgeId;
   name: string;
+  title: string;
   color: string;
   imageId: string;
+  musicId: string;
   equippedSkin: string;
+  equippedImageId: string;
+  skins: Array<SkinDefinition & { owned: boolean; equipped: boolean }>;
 }
 
 export interface RenderStageState {
@@ -303,7 +321,125 @@ export interface RenderStageState {
   cardTitle: string;
   color: string;
   portraitId: string;
+  unlocked: boolean;
+  cleared: boolean;
   best: StageBest | null;
+}
+
+export interface RenderHomeState {
+  coins: number;
+  highScore: number;
+  endlessUnlocked: boolean;
+  stagesCleared: number;
+  stagesTotal: number;
+  primaryButtons: Array<{ id: string; label: string; locked?: boolean; badge?: string }>;
+  footerButtons: Array<{ id: string; iconId: string }>;
+}
+
+export interface RenderLevelsState {
+  title: string;
+  stages: RenderStageState[];
+}
+
+export interface RenderLeaderboardState {
+  title: string;
+  playerScore: number;
+  rows: Array<{
+    displayIndex: number;
+    rank: number;
+    player: boolean;
+    name: string;
+    score: number;
+    judgeId: JudgeId;
+    skinId: string;
+    highlight: string;
+  }>;
+}
+
+export interface RenderShopState {
+  coins: number;
+  powerUps: Array<{
+    id: BoostProductId;
+    buttonId: string;
+    name: string;
+    subtitle: string;
+    price: number;
+    kind: string;
+    charges: number;
+    ownedCount: number | null;
+    runsRemaining: number | null;
+  }>;
+  cosmetics: Array<{
+    id: string;
+    judgeId: JudgeId;
+    skinId: string;
+    name: string;
+    price: number;
+    imageId: string;
+    color: string;
+    owned: boolean;
+    equipped: boolean;
+    status: string;
+  }>;
+}
+
+export interface RenderSettingsState {
+  title: string;
+  rows: Array<{ id: string; label: string; iconId: string; enabled: boolean }>;
+}
+
+export interface RenderBoostSelectState {
+  pending: RunIntent;
+  title: string;
+  runLabel: string;
+  coins: number;
+  boosts: Array<{ id: BoostProductId; buttonId: string; label: string; iconId: string; available: boolean; charges: number; selected: boolean }>;
+  actions: Array<{ id: string; label: string }>;
+}
+
+export interface RenderResultsState {
+  mode: RunMode;
+  stageId: number | null;
+  ftue: boolean;
+  completed: boolean;
+  failed: boolean;
+  headline: string;
+  grade: Grade;
+  missCause: string;
+  score: number;
+  bestCombo: number;
+  accuracy: number;
+  accuracyPct: number;
+  perfectHits: number;
+  coinsEarned: number;
+  leaderboardRank: number | null;
+  stats: Array<{ id: string; label: string; value: number }>;
+  reward: { coins: number };
+  medal: { grade: Grade; assetId: string } | null;
+  actions: Array<{ id: string; label: string; kind: string; sprite?: string }>;
+}
+
+export interface RenderRunHudState {
+  mode: RunMode;
+  status: RunStatus;
+  stageId: number | null;
+  ftue: boolean;
+  activeJudgeIndex: number;
+  activeJudgeId: JudgeId | null;
+  score: number;
+  combo: number;
+  comboTier: number;
+  hp: number;
+  hpMax: number;
+  remaining: number | null;
+  countdown: number | null;
+  continueOffer: { until: number; remaining: number; declineCause: string } | null;
+  boosts: Record<string, boolean>;
+  caption: { text: string; until: number } | null;
+  activeTargetId: number | null;
+  upcomingTarget: UpcomingTargetState | null;
+  targets: RenderTargetState[];
+  failSnapshot: RenderTargetState | null;
 }
 
 export interface RenderRunState {
