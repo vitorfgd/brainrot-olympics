@@ -2,6 +2,7 @@ import {
   PLAY_TOP,
   PLAY_BOTTOM,
   LOGICAL_WIDTH,
+  LOGICAL_HEIGHT,
   MAX_HP,
   HIT_QUALITY_VALUE,
   HIT_LABELS,
@@ -9,6 +10,7 @@ import {
   distance,
   difficultyProfile,
   hpDeltaForHit,
+  judgeSpawnRegion,
   qualityFromTiming,
   resolveTargetKind,
   scoreForHit,
@@ -23,10 +25,15 @@ import { emitEffect } from './effects.js'
 const TARGET_RADIUS = 44
 const MISS_WINDOW = 0.35
 const SPAWN_PREVIEW_LEAD = 0.56
-const SLIDE_OFF_PATH_GRACE = 0.42
-const SLIDE_START_RADIUS_BONUS = 22
-const SLIDE_END_RADIUS_MULT = 1.5
-const SLIDE_END_MIN_PROGRESS = 0.5
+const SLIDE_START_RADIUS_BONUS = 34
+const SLIDE_PATH_HIT_BONUS = 40
+const SLIDE_MARKER_RADIUS = 36
+const SLIDE_MIN_ENDPOINT_GAP = 170
+const SLIDE_MAX_ENDPOINT_GAP = 280
+const SLIDE_MIN_ARC_LENGTH = 160
+const SLIDE_MAX_ARC_LENGTH = 300
+const SLIDE_COMPLETE_PROGRESS = 0.9
+const SLIDE_MAX_VERTICAL_DRIFT = 64
 const HOLD_RELEASE_CUE_WINDOW = 0.24
 const FTUE_GUIDED_TAP_POINTS = [
   { x: 270, y: 472 },
@@ -111,7 +118,17 @@ export function updateRun(state) {
     return target.age < target.deadline + 0.35
   })
 
-  if (run.mode === 'stage' && run.elapsed >= run.duration) {
+  if (run.mode === 'stage' && run.elapsed >= run.duration && !run.timeUpUntil) {
+    run.timeUpUntil = state.time + 0.9
+    run.caption = 'TIME UP'
+    run.captionUntil = run.timeUpUntil
+    run.targets = []
+    run.activeTargetId = null
+    state.assets.stopMusic()
+    state.assets.playSfx(run.hp > 0 ? 'stageClear' : 'runFailed', state.save.settings.sfx, 0.85)
+  }
+
+  if (run.timeUpUntil && state.time >= run.timeUpUntil) {
     finishRun(state, run.hp > 0, run.hp > 0 ? 'STAGE CLEAR' : 'NO HP')
   }
 }
@@ -125,14 +142,15 @@ export function handleRunPointerDown(state) {
   if (!target) return false
 
   if (target.kind === 'slide') {
-    if (distance(x, y, target.x, target.y) > TARGET_RADIUS + SLIDE_START_RADIUS_BONUS) {
+    const started = target.progress > 0
+    if (!started && distance(x, y, target.x, target.y) > TARGET_RADIUS + SLIDE_START_RADIUS_BONUS) {
       resolveHit(state, target, 'miss', 'START ON THE DOT')
       return true
     }
     target.dragging = true
-    target.trail = [{ x, y }]
+    target.trail = [pointOnSlider(target, clamp(target.progress, 0, 1))]
     run.activeTargetId = target.id
-    showCaption(state, run, 'SLIDE')
+    showCaption(state, run, 'DRAG BALL', 0.75)
     return true
   }
 
@@ -144,42 +162,63 @@ export function handleRunPointerDown(state) {
     return true
   }
 
-  const quality = qualityFromTiming(target.age - target.approach)
-  resolveHit(state, target, quality, quality === 'miss' ? 'OFF BEAT' : HIT_LABELS[quality])
+  const timingError = target.age - target.approach
+  const quality = qualityFromTiming(timingError)
+  resolveHit(state, target, quality, quality === 'miss' ? tapMissCaption(timingError) : HIT_LABELS[quality])
   return true
+}
+
+function tapMissCaption(timingError) {
+  return timingError < 0 ? 'TOO EARLY' : 'OFF BEAT'
 }
 
 export function handleRunPointerMove(state) {
   const run = state.run
   if (!run || run.status !== 'playing' || run.activeTargetId === null) return
 
+  const lastX = state.pointer.lastMoveX
+  const lastY = state.pointer.lastMoveY
+  if (lastX != null && lastY != null) {
+    const dx = state.pointer.x - lastX
+    const dy = state.pointer.y - lastY
+    if (dx * dx + dy * dy < 36) return
+  }
+  state.pointer.lastMoveX = state.pointer.x
+  state.pointer.lastMoveY = state.pointer.y
+
   const target = run.targets.find((item) => item.id === run.activeTargetId)
   if (!target || target.resolved || target.kind !== 'slide') return
 
-  const nearest = nearestSliderProgress(target, state.pointer.x, state.pointer.y)
-  if (nearest.distance > target.tolerance) {
-    target.offPathFor += state.deltaTime
-    if (target.offPathFor > SLIDE_OFF_PATH_GRACE) {
-      resolveHit(state, target, 'miss', 'LEFT THE PATH')
-      run.activeTargetId = null
-      return
-    }
-  } else {
-    target.offPathFor = 0
-  }
-
+  const nearest = sliderRailProgress(target, state.pointer.x, state.pointer.y)
   target.progress = Math.max(target.progress, nearest.progress)
-  target.trail.push({ x: state.pointer.x, y: state.pointer.y })
-  if (target.trail.length > 18) target.trail.shift()
-
-  if (
-    distance(state.pointer.x, state.pointer.y, target.endX, target.endY) <= TARGET_RADIUS * SLIDE_END_RADIUS_MULT
-    && target.progress > SLIDE_END_MIN_PROGRESS
-  ) {
-    const quality = qualityFromTiming(target.age - target.approach)
-    resolveHit(state, target, quality, quality === 'miss' ? 'OFF BEAT' : `${HIT_LABELS[quality]} SLIDE`)
-    run.activeTargetId = null
+  if (!target.trail) target.trail = []
+  const trail = target.trail
+  const railPoint = pointOnSlider(target, target.progress)
+  const last = trail[trail.length - 1]
+  if (!last || distance(last.x, last.y, railPoint.x, railPoint.y) >= 10) {
+    trail.push(railPoint)
+    if (trail.length > 18) trail.shift()
   }
+
+  if (target.progress >= SLIDE_COMPLETE_PROGRESS) {
+    run.activeTargetId = null
+    target.dragging = false
+    resolveSlideHit(state, target)
+  }
+}
+
+function resolveSlideHit(state, target) {
+  const quality = slideQualityFromTiming(target.age - target.approach)
+  resolveHit(state, target, quality, quality === 'miss' ? 'OFF BEAT' : `${HIT_LABELS[quality]} SLIDE`)
+}
+
+function slideQualityFromTiming(errorSeconds) {
+  if (errorSeconds < -0.42) return 'okay'
+  const error = Math.abs(errorSeconds)
+  if (error <= 0.18) return 'perfect'
+  if (error <= 0.42) return 'good'
+  if (error <= 1.15) return 'okay'
+  return 'miss'
 }
 
 export function handleRunPointerUp(state) {
@@ -196,7 +235,13 @@ export function handleRunPointerUp(state) {
     const quality = qualityFromTiming(target.heldFor - target.holdDuration)
     resolveHit(state, target, quality, quality === 'miss' ? 'RELEASED OFF BEAT' : `${HIT_LABELS[quality]} HOLD`)
   } else if (target.kind === 'slide') {
-    resolveHit(state, target, 'miss', 'RELEASED EARLY')
+    target.dragging = false
+    if (target.progress >= SLIDE_COMPLETE_PROGRESS) {
+      target.progress = 1
+      resolveSlideHit(state, target)
+    } else {
+      showCaption(state, run, 'KEEP DRAGGING', 0.5)
+    }
   }
 
   run.activeTargetId = null
@@ -205,7 +250,7 @@ export function handleRunPointerUp(state) {
 export function spawnTarget(run, profile) {
   const upcoming = run.upcomingTarget
   const kind = upcoming?.kind || resolveTargetKind(run)
-  const point = upcoming?.point || chooseTargetPoint(run)
+  const point = upcoming?.point || chooseTargetPoint(run, kind)
   const target = {
     id: run.spawnCount,
     kind,
@@ -220,13 +265,12 @@ export function spawnTarget(run, profile) {
   }
 
   if (kind === 'slide') {
-    const path = createSliderPath(point, profile)
+    const path = createSliderPath(point, profile, run)
     Object.assign(target, path, {
-      deadline: profile.approach + 0.75,
+      deadline: profile.approach + 1.35,
       tolerance: profile.slideTolerance,
       progress: 0,
       dragging: false,
-      offPathFor: 0,
       trail: [],
     })
   }
@@ -254,9 +298,10 @@ function shouldShowHoldReleaseCue(target) {
 
 function prepareUpcomingTarget(run, profile, time) {
   if (run.upcomingTarget) return
+  const kind = resolveTargetKind(run)
   run.upcomingTarget = {
-    kind: resolveTargetKind(run),
-    point: chooseTargetPoint(run),
+    kind,
+    point: chooseTargetPoint(run, kind),
     createdAt: time,
     spawnAt: run.nextSpawnAt,
     approach: profile.approach,
@@ -397,8 +442,6 @@ function resolveHit(state, target, quality, caption) {
   applyMood(state, run, milestoneMood)
   pingInactiveJudges(state, run)
 
-  spawnHitFirework(state, target.x, target.y, quality, isMilestone)
-
   if (isMilestone) {
     run.caption = milestoneCalloutText(nextCombo)
     run.captionUntil = state.time + 1.48
@@ -467,7 +510,7 @@ function findTargetAt(run, x, y) {
     if (target.resolved) continue
     if (target.kind === 'slide') {
       const start = distance(x, y, target.x, target.y) <= TARGET_RADIUS + 16
-      const path = nearestSliderProgress(target, x, y).distance <= target.tolerance + 18
+      const path = nearestSliderProgress(target, x, y).distance <= target.tolerance + SLIDE_PATH_HIT_BONUS
       if (start || path) return target
     } else if (distance(x, y, target.x, target.y) <= TARGET_RADIUS + 20) {
       return target
@@ -476,22 +519,16 @@ function findTargetAt(run, x, y) {
   return null
 }
 
-function chooseTargetPoint(run) {
+function chooseTargetPoint(run, kind = null) {
   if (run.ftue && run.stage?.id === 1 && run.spawnCount < FTUE_GUIDED_TAP_POINTS.length) {
     return FTUE_GUIDED_TAP_POINTS[run.spawnCount]
   }
-  const margin = TARGET_RADIUS + 34
-  let best = {
-    x: margin + Math.random() * (LOGICAL_WIDTH - margin * 2),
-    y: PLAY_TOP + margin + Math.random() * (PLAY_BOTTOM - PLAY_TOP - margin * 2),
-  }
+  const region = judgeSpawnRegion(run)
+  let best = randomPointInRegion(region)
   let bestScore = -Infinity
-  for (let i = 0; i < 12; i += 1) {
-    const point = {
-      x: margin + Math.random() * (LOGICAL_WIDTH - margin * 2),
-      y: PLAY_TOP + margin + Math.random() * (PLAY_BOTTOM - PLAY_TOP - margin * 2),
-    }
-    const nearest = run.targets.reduce((min, target) => (target.resolved ? min : Math.min(min, distance(point.x, point.y, target.x, target.y))), 999)
+  for (let i = 0; i < 16; i += 1) {
+    const point = randomPointInRegion(region)
+    const nearest = nearestLiveTargetPoint(run, point, kind)
     if (nearest > bestScore) {
       best = point
       bestScore = nearest
@@ -500,36 +537,136 @@ function chooseTargetPoint(run) {
   return best
 }
 
-function createSliderPath(start, profile) {
-  const length = 150 + profile.ramp * 95
-  const minGap = 170
-  let end = null
-  for (let i = 0; i < 12; i += 1) {
-    const angle = Math.random() * Math.PI * 2
-    const candidate = {
-      x: clamp(start.x + Math.cos(angle) * length, 70, LOGICAL_WIDTH - 70),
-      y: clamp(start.y + Math.sin(angle) * length, PLAY_TOP + 70, PLAY_BOTTOM - 70),
-    }
-    end = candidate
-    if (distance(start.x, start.y, candidate.x, candidate.y) >= minGap) break
-  }
-  if (distance(start.x, start.y, end.x, end.y) < minGap) {
-    const awayFromCenter = Math.atan2(start.y - (PLAY_TOP + PLAY_BOTTOM) / 2, start.x - LOGICAL_WIDTH / 2)
-    end = {
-      x: clamp(start.x + Math.cos(awayFromCenter) * minGap, 70, LOGICAL_WIDTH - 70),
-      y: clamp(start.y + Math.sin(awayFromCenter) * minGap, PLAY_TOP + 70, PLAY_BOTTOM - 70),
+function nearestLiveTargetPoint(run, point, kind) {
+  let nearest = 999
+  for (const target of run.targets) {
+    if (target.resolved) continue
+    nearest = Math.min(nearest, distance(point.x, point.y, target.x, target.y))
+    if (target.kind === 'slide') {
+      nearest = Math.min(nearest, distance(point.x, point.y, target.endX, target.endY))
     }
   }
-  const dx = end.x - start.x
-  const dy = end.y - start.y
-  const dist = Math.max(1, Math.hypot(dx, dy))
-  const bend = (Math.random() < 0.5 ? -1 : 1) * (24 + profile.ramp * 36)
+  if (kind === 'slide' && nearest < SLIDE_MIN_ENDPOINT_GAP * 0.45) return -1
+  return nearest
+}
+
+function randomPointInRegion(region) {
   return {
-    endX: end.x,
-    endY: end.y,
-    controlX: (start.x + end.x) / 2 + (-dy / dist) * bend,
-    controlY: (start.y + end.y) / 2 + (dx / dist) * bend,
+    x: region.minX + Math.random() * (region.maxX - region.minX),
+    y: region.minY + Math.random() * (region.maxY - region.minY),
   }
+}
+
+function sliderPathLength(target, samples = 28) {
+  let length = 0
+  let prev = pointOnSlider(target, 0)
+  for (let i = 1; i <= samples; i += 1) {
+    const point = pointOnSlider(target, i / samples)
+    length += distance(prev.x, prev.y, point.x, point.y)
+    prev = point
+  }
+  return length
+}
+
+function createSliderPath(start, profile, run) {
+  const idealGap = (SLIDE_MIN_ENDPOINT_GAP + SLIDE_MAX_ENDPOINT_GAP) / 2
+  const idealArc = (SLIDE_MIN_ARC_LENGTH + SLIDE_MAX_ARC_LENGTH) / 2
+  let bestPath = null
+  let bestScore = -Infinity
+  for (let i = 0; i < 48; i += 1) {
+    const targetLen =
+      SLIDE_MIN_ENDPOINT_GAP + Math.random() * (SLIDE_MAX_ENDPOINT_GAP - SLIDE_MIN_ENDPOINT_GAP)
+    const direction = start.x < LOGICAL_WIDTH / 2 ? 1 : -1
+    const angle = (direction === 1 ? 0 : Math.PI) + (Math.random() - 0.5) * 0.52
+    const endX = clamp(start.x + Math.cos(angle) * targetLen, 70, LOGICAL_WIDTH - 70)
+    const endY = clamp(start.y + Math.sin(angle) * targetLen, PLAY_TOP + 70, PLAY_BOTTOM - 70)
+    const candidatePath = buildSliderPath(start, endX, endY)
+    if (!isSliderPathValid(candidatePath) || !slidePathClearOfOthers(candidatePath, run)) continue
+    const sep = distance(start.x, start.y, endX, endY)
+    const arc = sliderPathLength(candidatePath)
+    const score = -(Math.abs(sep - idealGap) + Math.abs(arc - idealArc) * 0.45)
+    if (score > bestScore) {
+      bestPath = candidatePath
+      bestScore = score
+    }
+  }
+  if (!bestPath) {
+    for (let offset = 0; offset < 10; offset += 1) {
+      const targetLen =
+        SLIDE_MIN_ENDPOINT_GAP + (offset / 9) * (SLIDE_MAX_ENDPOINT_GAP - SLIDE_MIN_ENDPOINT_GAP)
+      const direction = start.x < LOGICAL_WIDTH / 2 ? 1 : -1
+      const angle = (direction === 1 ? 0 : Math.PI) + (offset - 4.5) * 0.1
+      const endX = clamp(start.x + Math.cos(angle) * targetLen, 70, LOGICAL_WIDTH - 70)
+      const endY = clamp(start.y + Math.sin(angle) * targetLen, PLAY_TOP + 70, PLAY_BOTTOM - 70)
+      const candidatePath = buildSliderPath(start, endX, endY)
+      if (isSliderPathValid(candidatePath) && slidePathClearOfOthers(candidatePath, run)) {
+        bestPath = candidatePath
+        break
+      }
+    }
+    if (!bestPath) {
+      const endX = clamp(start.x + idealGap, 70, LOGICAL_WIDTH - 70)
+      const endY = clamp(start.y, PLAY_TOP + 70, PLAY_BOTTOM - 70)
+      bestPath = buildSliderPath(start, endX, endY)
+    }
+  }
+  return {
+    endX: bestPath.endX,
+    endY: bestPath.endY,
+    controlX: bestPath.controlX,
+    controlY: bestPath.controlY,
+  }
+}
+
+function buildSliderPath(start, endX, endY) {
+  const dx = endX - start.x
+  const dy = endY - start.y
+  const dist = Math.max(1, Math.hypot(dx, dy))
+  return {
+    x: start.x,
+    y: start.y,
+    endX,
+    endY,
+    controlX: (start.x + endX) / 2,
+    controlY: (start.y + endY) / 2,
+  }
+}
+
+function isSliderPathValid(path) {
+  const sep = distance(path.x, path.y, path.endX, path.endY)
+  if (sep < SLIDE_MIN_ENDPOINT_GAP) return false
+  if (sep > SLIDE_MAX_ENDPOINT_GAP) return false
+  if (Math.abs(path.endY - path.y) > SLIDE_MAX_VERTICAL_DRIFT) return false
+  const arc = sliderPathLength(path)
+  if (arc < SLIDE_MIN_ARC_LENGTH) return false
+  if (arc > SLIDE_MAX_ARC_LENGTH) return false
+  const mid = pointOnSlider(path, 0.5)
+  if (distance(mid.x, mid.y, path.x, path.y) < sep * 0.32) return false
+  if (distance(mid.x, mid.y, path.endX, path.endY) < sep * 0.32) return false
+  for (let i = 1; i < 24; i += 1) {
+    const t = i / 24
+    if (t < 0.14 || t > 0.86) continue
+    const point = pointOnSlider(path, t)
+    if (distance(point.x, point.y, path.x, path.y) < SLIDE_MARKER_RADIUS) return false
+    if (distance(point.x, point.y, path.endX, path.endY) < SLIDE_MARKER_RADIUS) return false
+  }
+  return true
+}
+
+function slidePathClearOfOthers(path, run) {
+  const minSep = SLIDE_MIN_ENDPOINT_GAP * 0.5
+  for (const target of run.targets) {
+    if (target.resolved || target.kind !== 'slide') continue
+    const spots = [
+      { x: target.x, y: target.y },
+      { x: target.endX, y: target.endY },
+    ]
+    for (const spot of spots) {
+      if (distance(path.x, path.y, spot.x, spot.y) < minSep) return false
+      if (distance(path.endX, path.endY, spot.x, spot.y) < minSep) return false
+    }
+  }
+  return true
 }
 
 function nearestSliderProgress(target, x, y) {
@@ -543,15 +680,11 @@ function nearestSliderProgress(target, x, y) {
   return best
 }
 
-function spawnHitFirework(state, x, y, quality, milestoneExtra) {
-  const baseSize = quality === 'perfect' ? 190 : quality === 'good' ? 158 : 132
-  emitEffect(state, {
-    type: 'firework',
-    x,
-    y,
-    size: baseSize * (milestoneExtra ? 1.22 : 1),
-    life: quality === 'perfect' ? 0.86 : 0.72,
-    alpha: quality === 'okay' ? 0.78 : 0.96,
-    hit: true,
-  })
+function sliderRailProgress(target, x, y) {
+  const dx = target.endX - target.x
+  const dy = target.endY - target.y
+  const lengthSq = Math.max(1, dx * dx + dy * dy)
+  const progress = clamp(((x - target.x) * dx + (y - target.y) * dy) / lengthSq, 0, 1)
+  const point = pointOnSlider(target, progress)
+  return { progress, distance: distance(x, y, point.x, point.y) }
 }

@@ -17,17 +17,6 @@ export function applyQueuedEffects(state) {
       run.hpPulseStartedAt = effect.startedAt
       run.hpPulseUntil = effect.until
       run.hpPulseColor = effect.color
-    } else if (effect.type === 'firework') {
-      state.fireworks ??= []
-      state.fireworks.push({
-        x: effect.x,
-        y: effect.y,
-        size: effect.size,
-        age: 0,
-        life: effect.life,
-        alpha: effect.alpha,
-        hit: Boolean(effect.hit),
-      })
     }
   }
 }

@@ -10,6 +10,8 @@ import {
 
 const RUN_MUSIC_VOLUME = 0.18
 const MENU_MUSIC_VOLUME = 0.03
+const RUN_MUSIC_FADE_SECONDS = 0.5
+const RUN_MUSIC_FADE_STEP_MS = 40
 const HAVE_FUTURE_DATA = 2
 
 export function createAssetManager() {
@@ -80,6 +82,7 @@ export function createAssetManager() {
   let menuOrder = []
   let menuOrderIndex = 0
   let lastMenuTrackIndex = -1
+  const fadeTimers = new WeakMap()
 
   for (let i = 0; i < menuPlaylist.length; i += 1) {
     menuPlaylist[i].addEventListener('ended', () => {
@@ -131,13 +134,49 @@ export function createAssetManager() {
     return index
   }
 
-  function playRunMusic() {
+  function stopAudioFade(audio) {
+    const timer = fadeTimers.get(audio)
+    if (!timer) return
+    clearInterval(timer)
+    fadeTimers.delete(audio)
+  }
+
+  function fadeAudioVolume(audio, to, seconds = RUN_MUSIC_FADE_SECONDS, onDone) {
+    if (!audio) return
+    stopAudioFade(audio)
+    const from = audio.volume
+    const startedAt = performance.now()
+    const duration = Math.max(1, seconds * 1000)
+    const timer = setInterval(() => {
+      const progress = Math.min(1, (performance.now() - startedAt) / duration)
+      audio.volume = from + (to - from) * progress
+      if (progress >= 1) {
+        clearInterval(timer)
+        fadeTimers.delete(audio)
+        audio.volume = to
+        onDone?.()
+      }
+    }, RUN_MUSIC_FADE_STEP_MS)
+    fadeTimers.set(audio, timer)
+  }
+
+  function fadeOutRunAudio(audio) {
+    if (!audio) return
+    fadeAudioVolume(audio, 0, RUN_MUSIC_FADE_SECONDS, () => {
+      audio.pause()
+      audio.currentTime = 0
+    })
+  }
+
+  function playRunMusic(fadeIn = false) {
     if (!activeAudio) return
+    stopAudioFade(activeAudio)
     activeAudio.loop = true
-    activeAudio.volume = RUN_MUSIC_VOLUME
+    activeAudio.volume = fadeIn ? 0 : RUN_MUSIC_VOLUME
     playWhenReady(activeAudio, () => {
       runMusicBlocked = true
     })
+    if (fadeIn) fadeAudioVolume(activeAudio, RUN_MUSIC_VOLUME)
   }
 
   return {
@@ -169,20 +208,21 @@ export function createAssetManager() {
       stopMenuMusic()
       const next = music.get(judge.musicSrc)
       if (!next) return
-      if (activeAudio && activeAudio !== next) {
-        activeAudio.pause()
-        activeAudio.currentTime = 0
+      const previous = activeAudio
+      if (previous && previous !== next) {
+        fadeOutRunAudio(previous)
       }
       activeAudio = next
       runMusicBlocked = false
-      playRunMusic()
+      if (previous !== next) activeAudio.currentTime = 0
+      playRunMusic(previous !== next)
     },
     stopMusic() {
       if (!activeAudio) return
-      activeAudio.pause()
-      activeAudio.currentTime = 0
+      const previous = activeAudio
       activeAudio = null
       runMusicBlocked = false
+      fadeOutRunAudio(previous)
     },
     setMusicEnabled(enabled) {
       if (!enabled) {

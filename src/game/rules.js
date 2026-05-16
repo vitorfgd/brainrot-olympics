@@ -2,6 +2,42 @@ export const LOGICAL_WIDTH = 540
 export const LOGICAL_HEIGHT = 960
 export const PLAY_TOP = 190
 export const PLAY_BOTTOM = 760
+
+export const JUDGE_CORNER_SPOTS = [
+  { x: 58, y: 58 },
+  { x: LOGICAL_WIDTH - 58, y: 58 },
+  { x: 58, y: LOGICAL_HEIGHT - 56 },
+  { x: LOGICAL_WIDTH - 58, y: LOGICAL_HEIGHT - 56 },
+]
+
+export const JUDGE_PORTRAIT_SIZE = { active: 106, inactive: 92 }
+
+/** Visual center of the active judge portrait (sprites are top-heavy). */
+export function judgePortraitVisualCenter(run) {
+  const spot = JUDGE_CORNER_SPOTS[run.activeJudgeIndex ?? 0] ?? JUDGE_CORNER_SPOTS[0]
+  const size = JUDGE_PORTRAIT_SIZE.active
+  return { x: spot.x, y: spot.y + size * 0.08 }
+}
+
+/** Playfield rectangle for spawning notes near the active judge's side of the screen. */
+export function judgeSpawnRegion(run) {
+  const index = ((run.activeJudgeIndex ?? 0) % 4 + 4) % 4
+  const margin = 78
+  const midX = LOGICAL_WIDTH / 2
+  const midY = (PLAY_TOP + PLAY_BOTTOM) / 2
+  const pad = 24
+
+  if (index === 0) {
+    return { minX: margin, maxX: midX - pad, minY: PLAY_TOP + margin, maxY: PLAY_BOTTOM - margin }
+  }
+  if (index === 1) {
+    return { minX: midX + pad, maxX: LOGICAL_WIDTH - margin, minY: PLAY_TOP + margin, maxY: PLAY_BOTTOM - margin }
+  }
+  if (index === 2) {
+    return { minX: margin, maxX: midX - pad, minY: midY - pad, maxY: PLAY_BOTTOM - margin }
+  }
+  return { minX: midX + pad, maxX: LOGICAL_WIDTH - margin, minY: midY - pad, maxY: PLAY_BOTTOM - margin }
+}
 export const MAX_HP = 100
 export const HIT_QUALITY_VALUE = { perfect: 1, good: 0.75, okay: 0.45, miss: 0 }
 export const HIT_LABELS = { perfect: 'PERFECT', good: 'GOOD', okay: 'OKAY', miss: 'MISS' }
@@ -30,14 +66,14 @@ export const JUDGES = [
   },
   {
     id: 'disco',
-    name: 'Disco',
+    name: 'Headband',
     title: 'Combo Prophet',
     color: '#70f66b',
-    imageSrc: `${ASSET_BASE}characters/Disco.png`,
+    imageSrc: `${ASSET_BASE}characters/Headband.png`,
     musicSrc: JUDGE_MUSIC_SRC.disco,
     skins: [
-      { id: 'default', name: 'Disco', price: 0, imageSrc: `${ASSET_BASE}characters/Disco.png` },
-      { id: 'headband', name: 'Headband', price: 1500, imageSrc: `${ASSET_BASE}characters/Headband.png` },
+      { id: 'default', name: 'Headband', price: 0, imageSrc: `${ASSET_BASE}characters/Headband.png` },
+      { id: 'disco', name: 'Disco', price: 1500, imageSrc: `${ASSET_BASE}characters/Disco.png` },
       { id: 'galaxy_brain', name: 'Galaxy Brain', price: 200, imageSrc: `${ASSET_BASE}characters/Galaxy_Brain.png` },
     ],
   },
@@ -110,6 +146,7 @@ export function rankForEndlessScore(score) {
 const ELIMINATION_STAMP_POOLS = {
   'MISSED THE BEAT': ['MISSED THE DROP', 'OUT OF SYNC', 'MISSED THE DROP', 'TOO LATE'],
   'OFF BEAT': ['OFF BEAT', 'OUT OF SYNC', 'EARLY HIT'],
+  'TOO EARLY': ['TOO EARLY', 'EARLY HIT', 'OFF BEAT'],
   'START ON THE DOT': ['START ON THE DOT', 'WRONG START', 'OFF BEAT'],
   'LEFT THE PATH': ['LEFT THE PATH', 'OFF RAIL', 'OUT OF SYNC'],
   'RELEASED EARLY': ['RELEASED EARLY', 'TOO EARLY', 'OFF BEAT'],
@@ -161,7 +198,25 @@ export const STAGES = [
     cardTitle: 'SLIDE OR DIE',
     cardColor: '#5ecbff',
     duration: 45,
-    kinds: ['slide'],
+    kinds: [
+      'slide',
+      'slide',
+      'slide',
+      'slide',
+      'tap',
+      'slide',
+      'slide',
+      'slide',
+      'tap',
+      'slide',
+      'slide',
+      'slide',
+      'slide',
+      'tap',
+      'slide',
+      'slide',
+      'slide',
+    ],
     difficulty: 0.12,
     judgeIndex: 1,
     portraitSrc: `${ASSET_BASE}characters/stage-sprites/ferret-default.png`,
@@ -172,7 +227,26 @@ export const STAGES = [
     cardTitle: 'HOLD THE LINE',
     cardColor: '#fce76d',
     duration: 45,
-    kinds: ['hold'],
+    kinds: [
+      'hold',
+      'hold',
+      'hold',
+      'tap',
+      'hold',
+      'hold',
+      'hold',
+      'slide',
+      'hold',
+      'hold',
+      'hold',
+      'tap',
+      'hold',
+      'hold',
+      'slide',
+      'hold',
+      'hold',
+      'hold',
+    ],
     difficulty: 0.16,
     judgeIndex: 2,
     portraitSrc: `${ASSET_BASE}characters/stage-sprites/manatee-default.png`,
@@ -209,7 +283,7 @@ export function isStageUnlocked(save, stageId) {
 }
 
 export function isEndlessUnlocked(save) {
-  return Boolean(save.stageBests[STAGES[STAGES.length - 1].id]?.cleared)
+  return Boolean(save.stageBests[3]?.cleared)
 }
 
 export function comboMultiplier(combo) {
@@ -278,8 +352,8 @@ export function difficultyProfile(run) {
       ramp,
       spawnInterval: lerp(1.3, 0.56, ramp),
       approach: lerp(1.22, 0.66, ramp),
-      slideTolerance: lerp(78, 60, ramp),
-      holdDuration: lerp(0.82, 1.05, ramp),
+      slideTolerance: lerp(102, 90, ramp),
+      holdDuration: lerp(0.58, 0.78, ramp),
       maxLiveTargets: 1,
     }
   }
@@ -289,11 +363,11 @@ export function difficultyProfile(run) {
   return {
     tier,
     ramp,
-    spawnInterval: lerp(1.25, 0.52, ramp),
-    approach: lerp(1.18, 0.62, ramp),
-    slideTolerance: lerp(82, 58, ramp),
-    holdDuration: lerp(0.82, 1.28, ramp),
-    maxLiveTargets: run.mode === 'stage' && run.stage?.id < 5 ? 1 : Math.min(1 + Math.floor(ramp * 3), 4),
+    spawnInterval: lerp(1.32, 0.68, ramp),
+    approach: lerp(1.24, 0.74, ramp),
+    slideTolerance: lerp(108, 92, ramp),
+    holdDuration: lerp(0.6, 0.95, ramp),
+    maxLiveTargets: run.mode === 'stage' && run.stage?.id < 5 ? 1 : Math.min(1 + Math.floor(ramp * 3), run.mode === 'stage' ? 2 : 4),
   }
 }
 

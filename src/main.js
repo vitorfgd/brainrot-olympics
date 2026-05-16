@@ -21,15 +21,21 @@ function frame(now) {
 }
 
 function onPointer(event) {
-  event.preventDefault()
+  if (event.type === 'pointerdown' || event.type === 'pointercancel') {
+    event.preventDefault()
+  }
   setPointerFromEvent(state, event)
 
   if (event.type === 'pointerdown') {
+    state.pointer.lastMoveX = state.pointer.x
+    state.pointer.lastMoveY = state.pointer.y
     canvas.setPointerCapture?.(event.pointerId)
     handlePointerDown(state)
   } else if (event.type === 'pointermove') {
     handlePointerMove(state)
   } else {
+    state.pointer.lastMoveX = null
+    state.pointer.lastMoveY = null
     handlePointerUp(state)
   }
 }

@@ -3,6 +3,8 @@ import {
   COMBO_MILESTONE_AT,
   CONTINUE_COST,
   JUDGES,
+  JUDGE_CORNER_SPOTS,
+  JUDGE_PORTRAIT_SIZE,
   LOGICAL_HEIGHT,
   LOGICAL_WIDTH,
   MAX_HP,
@@ -16,8 +18,8 @@ import {
 import { pointOnSlider } from './targets.js'
 import { HOME_LAYOUT, RESULTS_LAYOUT, RUN_HUD_LAYOUT } from './layout.js'
 
-const FIREWORK_FRAME_COUNT = 8
 const HOT_PINK = '#ff4ff0'
+const TOUCH_DEVICE = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
 const SOFT_PINK = '#ff8af5'
 const RESULT_MEDAL_CENTER_FIX = {
   D: -7,
@@ -51,8 +53,7 @@ export function drawGame(state) {
   const shake = runShakeOffset(state)
   if (shake) ctx.save()
   if (shake) ctx.translate(shake.x, shake.y)
-  drawScrollingConfetti(state)
-  drawFireworks(state)
+  if (!shouldSkipRunConfetti(state)) drawScrollingConfetti(state)
 
   if (state.screen === 'home') drawHome(state)
   if (state.screen === 'leaderboard') drawLeaderboard(state)
@@ -160,16 +161,26 @@ function drawTextBlock(ctx, text, x, y, size, color, align, weight, maxWidth, ma
   return lines.length
 }
 
+function bungeeVisualCenterY(ctx, anchorY, size, weight = 1000, sample = '0') {
+  ctx.font = `${weight} ${size}px Bungee, system-ui, Segoe UI, sans-serif`
+  const metrics = ctx.measureText(sample)
+  const ascent = metrics.actualBoundingBoxAscent ?? size * 0.82
+  const descent = metrics.actualBoundingBoxDescent ?? size * 0.2
+  const height = ascent + descent
+  return anchorY + (ascent - height / 2)
+}
+
 function drawOutlinedText(ctx, text, x, y, size, color, strokeColor, align = 'center', weight = 900, strokeWidth = 3) {
+  const visualY = bungeeVisualCenterY(ctx, y, size, weight, text)
   ctx.textAlign = align
   ctx.textBaseline = 'middle'
   ctx.font = `${weight} ${size}px Bungee, system-ui, Segoe UI, sans-serif`
   ctx.lineJoin = 'round'
   ctx.lineWidth = strokeWidth
   ctx.strokeStyle = strokeColor
-  ctx.strokeText(text, x, y)
+  ctx.strokeText(text, x, visualY)
   ctx.fillStyle = color
-  ctx.fillText(text, x, y)
+  ctx.fillText(text, x, visualY)
 }
 
 function drawHome(state) {
@@ -210,7 +221,7 @@ function drawHome(state) {
 
   const footer = HOME_LAYOUT.footerButtons
   drawCircleIconButton(state, 'leaderboard', footer.leaderboard.cx, footer.leaderboard.cy, footer.leaderboard.r, 'iconTrophy', '#a8fbff')
-  drawCircleIconButton(state, 'shop', footer.shop.cx, footer.shop.cy, footer.shop.r, 'iconCoin', '#ffe24a')
+  drawCircleIconButton(state, 'shop', footer.shop.cx, footer.shop.cy, footer.shop.r, 'iconShop', '#ffe24a', 72)
   drawCircleIconButton(state, 'settings', footer.settings.cx, footer.settings.cy, footer.settings.r, 'iconSettings', '#a994c8')
 }
 
@@ -232,7 +243,7 @@ function drawHomeJudgePortraits(state) {
   ]
   JUDGES.forEach((judge, i) => {
     const p = spots[i]
-    const img = judgeImage(state, judge, state.save.equippedSkins[judge.id])
+    const img = equippedJudgeImage(state, judge)
     const ring = HOME_PORTRAIT_RINGS[i] || '#ffffff'
     drawHomePortraitCircle(state, p.x, p.y, p.r, ring, img, p)
   })
@@ -318,7 +329,7 @@ function drawHomeSpriteMenuButton(state, id, x, y, w, h, options) {
   drawImage(ctx, state.assets.images[sprite], x, y, w, h)
   let textShift = 0
   if (icon) {
-    drawIcon(ctx, state.assets.images[icon], x + 28, y + h / 2 - 24, 48)
+    drawIconFit(ctx, state.assets.images[icon], x + 26, y + h / 2 - 24, 54, 48)
     textShift = 26
   }
   drawOutlinedText(ctx, label, x + w / 2 + textShift * 0.35, y + h / 2 + textYOffset, labelSize, labelColor, '#552169', 'center', 1000, 4)
@@ -343,9 +354,10 @@ function drawHomeSpriteMenuButton(state, id, x, y, w, h, options) {
   button(state, id, x, y, w, h)
 }
 
-function drawCircleIconButton(state, id, cx, cy, r, iconKey, ringColor) {
+function drawCircleIconButton(state, id, cx, cy, r, iconKey, ringColor, iconSize = 44) {
   const ctx = state.ctx
   const scale = pressScale(state, cx - r, cy - r, r * 2, r * 2, 0.9)
+  const half = iconSize / 2
   ctx.save()
   ctx.translate(cx, cy)
   ctx.scale(scale, scale)
@@ -359,7 +371,7 @@ function drawCircleIconButton(state, id, cx, cy, r, iconKey, ringColor) {
   ctx.lineWidth = 4
   ctx.stroke()
   ctx.shadowBlur = 0
-  drawIcon(ctx, state.assets.images[iconKey], cx - 22, cy - 22, 44)
+  drawIcon(ctx, state.assets.images[iconKey], cx - half, cy - half, iconSize)
   ctx.restore()
   button(state, id, cx - r, cy - r, r * 2, r * 2)
 }
@@ -368,6 +380,7 @@ function drawStageSelect(state) {
   const ctx = state.ctx
   drawStageSelectSpotlights(state)
   drawRoundTealBackButton(state, 48, 56, 36)
+  drawOutlinedText(ctx, 'LEVELS', LOGICAL_WIDTH / 2, 56, 38, '#fce76d', '#5e315f', 'center', 1000, 4)
 
   const cardH = 126
   const gap = 12
@@ -550,10 +563,7 @@ function drawStageGradeMedal(state, cx, cy, grade, size) {
     const sourceH = image.naturalHeight - trimY * 1.75
     const drawW = size
     const drawH = size * (sourceH / sourceW)
-    ctx.save()
-    ctx.globalCompositeOperation = 'screen'
     ctx.drawImage(image, sourceX, sourceY, sourceW, sourceH, cx - drawW / 2, cy - drawH / 2, drawW, drawH)
-    ctx.restore()
     return
   }
 
@@ -586,26 +596,25 @@ function drawLeaderboard(state) {
   ctx.fillStyle = 'rgba(5, 4, 28, 0.22)'
   ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
   drawRoundTealBackButton(state, 48, 56, 36)
+  drawOutlinedText(ctx, 'LEADERBOARD', LOGICAL_WIDTH / 2, 68, 34, '#fce76d', '#5e315f', 'center', 1000, 4)
 
   const rows = leaderboardRows()
-  const startY = 122
+  const startY = 154
   const rowH = 60
   const gap = 14
   const playerH = 82
   const playerScore = Math.max(state.save.highScore, 84600)
-  const playerInsertAfter = leaderboardPlayerInsertIndex(rows, playerScore)
+  const displayRows = leaderboardDisplayRows(rows, playerScore)
   let y = startY
-  let displayIndex = 0
-  for (let index = 0; index < rows.length; index += 1) {
-    if (index === playerInsertAfter) {
-      drawLeaderboardPlayerRow(state, playerScore, displayIndex + 1, y, playerH, displayIndex)
+  for (let index = 0; index < displayRows.length; index += 1) {
+    const entry = displayRows[index]
+    if (entry.player) {
+      drawLeaderboardPlayerRow(state, entry.score, entry.rank, y, playerH, index)
       y += playerH + gap
-      displayIndex += 1
+    } else {
+      drawLeaderboardRow(state, entry.row, entry.rank, index, y, rowH)
+      y += rowH + gap
     }
-    const row = rows[index]
-    drawLeaderboardRow(state, row, displayIndex + 1, displayIndex, y, rowH)
-    y += rowH + gap
-    displayIndex += 1
   }
 }
 
@@ -622,7 +631,7 @@ function drawShop(state) {
 
   drawOutlinedText(ctx, 'COSMETICS', LOGICAL_WIDTH / 2, 560, 34, '#ffffff', '#234b61', 'center', 1000, 4)
   drawShopCosmeticCard(state, shopSkinItem(state, 'blingbeak', 'partyhat', '#5cff7b'), 44, 594)
-  drawShopCosmeticCard(state, shopSkinItem(state, 'disco', 'headband', '#a8fbff'), 282, 594)
+  drawShopCosmeticCard(state, shopSkinItem(state, 'disco', 'disco', '#a8fbff'), 282, 594)
   drawShopCosmeticCard(state, shopSkinItem(state, 'coolman', 'king', '#a8fbff'), 44, 772)
   drawShopCosmeticCard(state, shopSkinItem(state, 'dj', 'punk', '#fce76d'), 282, 772)
 }
@@ -647,9 +656,33 @@ function drawShopMascot(state) {
   const ctx = state.ctx
   const image = state.assets.images.shopMan
   if (!image?.complete || image.naturalWidth <= 0) return
-  const w = 214
+  const w = 272
   const h = (image.naturalHeight / image.naturalWidth) * w
-  drawImage(ctx, image, LOGICAL_WIDTH / 2 - w / 2, 82, w, h)
+  const x = LOGICAL_WIDTH / 2 - w / 2 - 42
+  const y = 28
+  drawImage(ctx, image, x, y, w, h)
+  drawShopSpeechBubble(state, x, y, w, h)
+}
+
+function drawShopSpeechBubble(state, manX, manY, manW, manH) {
+  const ctx = state.ctx
+  const image = state.assets.images.shopSpeechBubble
+  if (!image?.complete || image.naturalWidth <= 0) return
+
+  const bubbleW = 318
+  const bubbleH = (image.naturalHeight / image.naturalWidth) * bubbleW
+  const bubbleX = manX + manW * 0.28
+  const bubbleY = manY + manH * 0.3
+
+  ctx.drawImage(image, bubbleX, bubbleY, bubbleW, bubbleH)
+
+  const bodyTop = bubbleY + bubbleH * 0.2
+  const bodyBottom = bubbleY + bubbleH * 0.82
+  const textX = bubbleX + bubbleW * 0.5
+  const centerY = (bodyTop + bodyBottom) / 2
+  const lineGap = 32
+  drawOutlinedText(ctx, 'WELCOME TO', textX, centerY - lineGap / 2, 26, '#171236', '#ffffff', 'center', 1000, 3)
+  drawOutlinedText(ctx, 'SHOP', textX, centerY + lineGap / 2, 32, '#171236', '#ffffff', 'center', 1000, 3)
 }
 
 function drawShopCoinPill(state) {
@@ -792,7 +825,7 @@ function drawSettingsToggleRow(state, id, x, y, icon, label, enabled) {
   ctx.stroke()
   ctx.restore()
 
-  drawIcon(ctx, state.assets.images[icon], x + 20, y + 14, 34)
+  drawIconFit(ctx, state.assets.images[icon], x + 18, y + 13, 38, 36)
   drawOutlinedText(ctx, label, x + 96, y + h / 2, 25, border, '#2d1648', 'left', 1000, 3)
   drawOutlinedText(ctx, enabled ? 'ON' : 'OFF', x + w - 30, y + h / 2, 25, valueColor, '#2d1648', 'right', 1000, 3)
   button(state, id, x, y, w, h)
@@ -846,6 +879,7 @@ function drawResults(state) {
   run.resultsShownAt ??= state.time
 
   drawResultsSpotlights(state)
+  drawResultsConfetti(state)
   const cx = LOGICAL_WIDTH / 2
   const elapsed = state.time - run.resultsShownAt
 
@@ -877,29 +911,27 @@ function drawResults(state) {
   nextY = drawSequencedStat(state, elapsed, 0.54, nextY, cyan, 'BEST COMBO', `x${animatedInt(combo, reveal)}`)
   nextY = drawSequencedStat(state, elapsed, 0.66, nextY, cyan, 'ACCURACY', `${animatedInt(accPct, reveal)}%`)
   nextY = drawSequencedStat(state, elapsed, 0.78, nextY, cyan, 'PERFECT HITS', String(animatedInt(perfects, reveal)))
-  const coinY = nextY + 16
+
+  const statsBottom = nextY - RESULTS_LAYOUT.stat.gap
+  const buttonTopY = resultsFirstButtonY(run)
+  const coinY = resultsCoinY(statsBottom, buttonTopY)
   withReveal(ctx, delayedReveal(elapsed, 0.96, 0.22), () => drawResultsCoinReward(state, coinY, gold, animatedInt(run.coinsEarned || 0, reveal), elapsed - 0.96))
-  nextY = coinY + 68
 
   const retry = resultsRetryAction(run)
   if (elapsed < 1.22) return
   if (run.ftue) {
     if (run.completed) {
-      const unlockY = nextY + 28
-      drawOutlinedText(ctx, 'LEVELS UNLOCKED', cx, unlockY, 25, '#a8fbff', '#234b61', 'center', 1000, 4)
-      drawText(ctx, 'Next: Slide Lesson', cx, unlockY + 30, 18, '#fce76d', 'center', 900)
-      drawSpriteButton(state, 'ftueContinue', RESULTS_LAYOUT.retryButton.x, unlockY + 76, RESULTS_LAYOUT.retryButton.w, RESULTS_LAYOUT.retryButton.h, 'buttonCyan', ftueResultButtonLabel(run), null)
+      drawSpriteButton(state, 'ftueNextStage', RESULTS_LAYOUT.retryButton.x, buttonTopY, RESULTS_LAYOUT.retryButton.w, RESULTS_LAYOUT.retryButton.h, 'buttonCyan', 'NEXT LEVEL', null)
+      drawSpriteButton(state, 'resultsHome', RESULTS_LAYOUT.menuButton.x, buttonTopY + 112, RESULTS_LAYOUT.menuButton.w, RESULTS_LAYOUT.menuButton.h, 'buttonPink', 'MENU', null)
       return
     }
-    drawSpriteButton(state, 'ftueContinue', RESULTS_LAYOUT.retryButton.x, 674, RESULTS_LAYOUT.retryButton.w, RESULTS_LAYOUT.retryButton.h, 'buttonPink', ftueResultButtonLabel(run), null)
-    drawSpriteButton(state, 'resultsHome', RESULTS_LAYOUT.menuButton.x, 790, RESULTS_LAYOUT.menuButton.w, RESULTS_LAYOUT.menuButton.h, 'buttonCyan', 'MENU', null)
-    drawText(ctx, 'Try again now or come back from the menu.', cx, 852, 15, '#d9fbff', 'center', 800)
+    drawSpriteButton(state, 'ftueContinue', RESULTS_LAYOUT.retryButton.x, buttonTopY, RESULTS_LAYOUT.retryButton.w, RESULTS_LAYOUT.retryButton.h, 'buttonPink', ftueResultButtonLabel(run), null)
+    drawSpriteButton(state, 'resultsHome', RESULTS_LAYOUT.menuButton.x, buttonTopY + 112, RESULTS_LAYOUT.menuButton.w, RESULTS_LAYOUT.menuButton.h, 'buttonCyan', 'MENU', null)
     return
   }
 
-  const buttonY = run.completed ? 728 : 674
-  drawSpriteButton(state, 'tryAgain', RESULTS_LAYOUT.retryButton.x, buttonY, RESULTS_LAYOUT.retryButton.w, RESULTS_LAYOUT.retryButton.h, retry.sprite, retry.label, retry.icon)
-  drawSpriteButton(state, 'resultsHome', RESULTS_LAYOUT.menuButton.x, buttonY + 112, RESULTS_LAYOUT.menuButton.w, RESULTS_LAYOUT.menuButton.h, 'buttonCyan', 'MENU', null)
+  drawSpriteButton(state, 'tryAgain', RESULTS_LAYOUT.retryButton.x, buttonTopY, RESULTS_LAYOUT.retryButton.w, RESULTS_LAYOUT.retryButton.h, retry.sprite, retry.label, retry.icon)
+  drawSpriteButton(state, 'resultsHome', RESULTS_LAYOUT.menuButton.x, buttonTopY + 112, RESULTS_LAYOUT.menuButton.w, RESULTS_LAYOUT.menuButton.h, 'buttonCyan', 'MENU', null)
 }
 
 function resultsRevealProgress(state, run) {
@@ -937,7 +969,18 @@ function drawSlammedFailureText(ctx, text, x, y, elapsed) {
   ctx.restore()
 }
 
+function resultsFirstButtonY(run) {
+  if (run.ftue && !run.completed) return RESULTS_LAYOUT.retryButton.yFailed
+  return run.completed ? RESULTS_LAYOUT.retryButton.yCompleted : RESULTS_LAYOUT.retryButton.yFailed
+}
+
+function resultsCoinY(statsBottom, buttonTopY) {
+  const coinH = RESULTS_LAYOUT.coin.h
+  return statsBottom + (buttonTopY - statsBottom - coinH) / 2
+}
+
 function resultsRetryAction(run) {
+  if (run.mode === 'stage' && run.completed && run.stage?.id === 1) return { label: 'NEXT LEVEL', icon: null, sprite: 'buttonCyan' }
   if (run.mode === 'stage' && run.completed && gradeRank(run.grade) >= gradeRank('B')) return { label: 'NEXT STAGE', icon: null, sprite: 'buttonCyan' }
   if (run.mode === 'endless') return { label: 'TRY AGAIN', icon: null, sprite: 'buttonPink' }
   return { label: 'RETRY STAGE', icon: null, sprite: 'buttonPink' }
@@ -1010,7 +1053,6 @@ function drawResultsMedalSprite(state, cx, cy, grade, revealElapsed = 1) {
     const drawW = baseW * scale
     const drawH = drawW * (sourceH / sourceW)
     const centerFix = (RESULT_MEDAL_CENTER_FIX[String(grade).toUpperCase()] || 0) * (drawW / sourceW)
-    ctx.globalCompositeOperation = 'screen'
     ctx.drawImage(image, sourceX, sourceY, sourceW, sourceH, -drawW / 2 + centerFix, -drawH / 2, drawW, drawH)
   } else {
     drawOutlinedText(ctx, String(grade).toUpperCase(), 0, 0, 92, gradeColor(grade), '#421139', 'center', 1000, 5)
@@ -1103,6 +1145,9 @@ function drawRun(state) {
   const visualTime = run.hitStopUntil > state.time ? run.hitStopStartedAt || state.time : state.time
 
   if (run.status === 'playing') {
+    if (shouldShowStageTimer(state, run)) {
+      drawStageTimer(ctx, run)
+    }
     drawUpcomingTargetCue(state, run, hitTheme)
     for (const target of run.targets) {
       if (!target.resolved) drawTarget(ctx, target, hitTheme)
@@ -1135,6 +1180,10 @@ function drawRun(state) {
 
   if (run.goUntil > state.time) {
     drawGoSplash(state, run)
+  }
+
+  if (run.timeUpUntil > state.time) {
+    drawTimeUpSplash(state, run)
   }
 
   if (run.status === 'finished') {
@@ -1185,6 +1234,22 @@ function drawGoSplash(state, run) {
   ctx.restore()
 }
 
+function drawTimeUpSplash(state, run) {
+  const ctx = state.ctx
+  const remaining = Math.max(0, run.timeUpUntil - state.time)
+  const progress = 1 - clamp(remaining / 0.9, 0, 1)
+  const color = run.hp > 0 ? '#a8fbff' : HOT_PINK
+  ctx.save()
+  ctx.fillStyle = `rgba(8, 4, 30, ${0.42 + (1 - progress) * 0.18})`
+  ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+  ctx.globalAlpha = 1 - progress * 0.15
+  ctx.translate(LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2)
+  ctx.scale(1.25 - easeOutCubic(progress) * 0.15, 1.25 - easeOutCubic(progress) * 0.15)
+  drawOutlinedText(ctx, 'TIME UP', 0, -8, 58, color, '#234b61', 'center', 1000, 6)
+  drawOutlinedText(ctx, run.hp > 0 ? 'STAGE CLEAR' : 'NO HP', 0, 54, 28, run.hp > 0 ? '#fce76d' : HOT_PINK, '#421139', 'center', 1000, 4)
+  ctx.restore()
+}
+
 function drawFtueRunPrompt(state, run) {
   const ctx = state.ctx
   const prompt = ftuePrompt(run)
@@ -1201,7 +1266,10 @@ function drawRunHud(state) {
   const run = state.run
   drawRunJudgeCorners(state, run)
 
-  drawOutlinedText(ctx, formatScore(run.score), RUN_HUD_LAYOUT.score.x, RUN_HUD_LAYOUT.score.y, 48, '#ffffff', '#5e315f', 'left', 1000, 5)
+  const judgeSpot = JUDGE_CORNER_SPOTS[run.activeJudgeIndex ?? 0]
+  const scoreSize = 48
+  const scoreX = judgeSpot.x + JUDGE_PORTRAIT_SIZE.active / 2 + 14
+  drawOutlinedText(ctx, formatScore(run.score), scoreX, judgeSpot.y, scoreSize, '#ffffff', '#5e315f', 'left', 1000, 5)
 
   drawComboMeter(ctx, run)
   const hp = RUN_HUD_LAYOUT.hp
@@ -1219,39 +1287,58 @@ function drawRunHud(state) {
 }
 
 function drawRunJudgeCorners(state, run) {
-  const spots = [
-    { x: 58, y: 58 },
-    { x: LOGICAL_WIDTH - 58, y: 58 },
-    { x: 58, y: LOGICAL_HEIGHT - 56 },
-    { x: LOGICAL_WIDTH - 58, y: LOGICAL_HEIGHT - 56 },
-  ]
-
   JUDGES.forEach((judge, index) => {
     const skinId = state.save.equippedSkins[judge.id] || 'default'
     const active = index === run.activeJudgeIndex
-    const spot = spots[index]
-    drawRunJudgePortrait(state, judge, skinId, spot.x, spot.y, active ? 106 : 92, active)
+    const spot = JUDGE_CORNER_SPOTS[index]
+    const size = active ? JUDGE_PORTRAIT_SIZE.active : JUDGE_PORTRAIT_SIZE.inactive
+    drawRunJudgePortrait(state, judge, skinId, spot.x, spot.y, size, active, index < 2)
   })
 }
 
-function drawRunJudgePortrait(state, judge, skinId, cx, cy, size, active) {
+function drawRunJudgePortrait(state, judge, skinId, cx, cy, size, active, onTopRow = false) {
   const ctx = state.ctx
   const image = judgeImage(state, judge, skinId)
   ctx.save()
-  ctx.globalAlpha = active ? 1 : 0.48
-  ctx.filter = active ? 'none' : 'grayscale(0.85) saturate(0.55)'
-  ctx.shadowColor = active ? judge.color : 'transparent'
-  ctx.shadowBlur = active ? 16 : 0
+  ctx.globalAlpha = active ? 1 : onTopRow ? 0.88 : 0.72
+  if (!TOUCH_DEVICE && active) {
+    ctx.shadowColor = judge.color
+    ctx.shadowBlur = 16
+  }
   if (image?.complete && image.naturalWidth > 0) {
-    ctx.drawImage(image, cx - size / 2, cy - size / 2, size, size)
+    const focusY = cy + size * 0.06
+    ctx.drawImage(image, cx - size / 2, focusY - size / 2, size, size)
   }
   ctx.restore()
 }
 
+function drawStageTimer(ctx, run) {
+  const { cx, y } = RUN_HUD_LAYOUT.timer
+  const remaining = Math.max(0, run.duration - run.elapsed)
+  const secs = Math.ceil(remaining)
+  const mins = Math.floor(secs / 60)
+  const label = `${mins}:${String(secs % 60).padStart(2, '0')}`
+  const urgent = remaining <= 10
+
+  ctx.save()
+  ctx.globalAlpha = urgent ? 0.52 : 0.38
+  drawOutlinedText(ctx, label, cx, y, 128, urgent ? HOT_PINK : '#a8fbff', '#234b61', 'center', 1000, 6)
+  ctx.restore()
+}
+
+function shouldShowStageTimer(state, run) {
+  return (
+    run.mode === 'stage'
+    && Number.isFinite(run.duration)
+    && state.time >= (run.goUntil || 0)
+  )
+}
+
 function drawComboMeter(ctx, run) {
+  const { cx, textY } = RUN_HUD_LAYOUT.combo
   const tier = Math.min(10, Math.floor((run.combo || 0) / 10))
   const glow = tier / 10
-  drawOutlinedText(ctx, `${run.combo}x`, RUN_HUD_LAYOUT.combo.cx, RUN_HUD_LAYOUT.combo.textY, 48 + glow * 6, '#a8fbff', '#234b61', 'center', 1000, 4)
+  drawOutlinedText(ctx, `${run.combo}x`, cx, textY, 48 + glow * 6, '#a8fbff', '#234b61', 'center', 1000, 4)
 }
 
 function drawPulsedHpBar(ctx, run, x, y, w, h) {
@@ -1310,10 +1397,41 @@ function drawUpcomingTargetCue(state, run, theme) {
 }
 
 function drawTargetAnticipation(ctx, target, progress, theme) {
+  const color = target.kind === 'hold' ? theme.ringHold.arc : target.kind === 'slide' ? theme.ringSlide.path : theme.ringTap.outer
+
+  if (target.kind === 'hold') return
+
+  if (target.kind === 'slide') {
+    if (progress <= 1.05) {
+      const t = clamp(progress, 0, 1)
+      const radius = 76 - t * 52
+      ctx.save()
+      ctx.globalAlpha = (1 - t) * 0.5
+      ctx.strokeStyle = color
+      ctx.lineWidth = 4
+      ctx.beginPath()
+      ctx.arc(target.x, target.y, radius, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    }
+    if (progress > 0.75 && progress < 1.2) {
+      const t = clamp((progress - 0.75) / 0.25, 0, 1)
+      const radius = 58 - t * 40
+      ctx.save()
+      ctx.globalAlpha = (1 - t) * 0.42
+      ctx.strokeStyle = theme.ringSlide.end
+      ctx.lineWidth = 4
+      ctx.beginPath()
+      ctx.arc(target.endX, target.endY, radius, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    }
+    return
+  }
+
   if (target.age > 0.22 || progress > 0.22) return
   const t = clamp(target.age / 0.22, 0, 1)
   const radius = 76 - t * 18
-  const color = target.kind === 'hold' ? theme.ringHold.arc : target.kind === 'slide' ? theme.ringSlide.path : theme.ringTap.outer
   ctx.save()
   ctx.globalAlpha = (1 - t) * 0.42
   ctx.strokeStyle = color
@@ -1365,37 +1483,75 @@ function drawTapTarget(ctx, target, progress, theme) {
 
 function drawHoldTarget(ctx, target, progress, theme) {
   const { fill, arc } = theme.ringHold
-  drawGlowCircle(ctx, target.x, target.y, 48, fill, true)
-  const ringFill = target.holding ? clamp(target.heldFor / target.holdDuration, 0, 1) : clamp(progress, 0, 1)
-  const releaseCue = target.holding && target.heldFor >= target.holdDuration - 0.24
-  ctx.strokeStyle = releaseCue ? HOT_PINK : arc
-  ctx.lineWidth = releaseCue ? 12 : 10
+  const holdT = target.holding ? clamp(target.heldFor / target.holdDuration, 0, 1.15) : 0
+  const releaseWindow = target.holding && target.heldFor >= target.holdDuration - 0.24
+  const late = target.holding && target.heldFor > target.holdDuration + 0.18
+  const color = late ? HOT_PINK : releaseWindow ? '#fce76d' : arc
+
+  drawGlowCircle(ctx, target.x, target.y, releaseWindow ? 54 : 50, releaseWindow ? '#fce76d' : fill, true)
+
+  ctx.strokeStyle = color
+  ctx.lineWidth = releaseWindow ? 12 : 10
   ctx.beginPath()
-  ctx.arc(target.x, target.y, 62, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ringFill)
+  ctx.arc(target.x, target.y, 62, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp(holdT, 0, 1))
   ctx.stroke()
-  if (releaseCue) {
-    const pulse = 1 + Math.sin((target.heldFor - target.holdDuration) * 38) * 0.04
-    ctx.save()
-    ctx.translate(target.x, target.y - 88)
-    ctx.scale(pulse, pulse)
-    drawOutlinedText(ctx, 'RELEASE', 0, 0, 20, HOT_PINK, '#421139', 'center', 1000, 3)
-    ctx.restore()
+
+  if (target.holding && !releaseWindow) {
+    const left = Math.max(0, target.holdDuration - target.heldFor)
+    drawOutlinedText(ctx, left.toFixed(1), target.x, target.y, 24, '#171236', '#ffffff', 'center', 1000, 3)
   }
+  if (releaseWindow) drawSimpleReleasePulse(ctx, target, color)
+  else if (!target.holding) drawOutlinedText(ctx, 'HOLD', target.x, target.y - 82, 20, arc, '#234b61', 'center', 1000, 3)
+}
+
+function drawSimpleReleasePulse(ctx, target, color) {
+  const pulse = (Math.sin(target.heldFor * 24) + 1) / 2
+  const radius = 72 + pulse * 16
+  ctx.save()
+  ctx.globalAlpha = 0.84 - pulse * 0.24
+  ctx.strokeStyle = color
+  ctx.lineWidth = 5
+  ctx.beginPath()
+  ctx.arc(target.x, target.y, radius, 0, Math.PI * 2)
+  ctx.stroke()
+  drawOutlinedText(ctx, 'RELEASE', target.x, target.y - 86, 22, color, '#421139', 'center', 1000, 3)
+  ctx.restore()
 }
 
 function drawSlideTarget(ctx, target, progress, theme) {
   const s = theme.ringSlide
+  const beatT = clamp(target.age / target.approach, 0, 1)
+  const beatPoint = pointOnSlider(target, beatT)
   ctx.save()
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
+
+  ctx.save()
+  ctx.globalAlpha = target.dragging ? 0.22 : 0.16
+  ctx.strokeStyle = s.path
+  ctx.lineWidth = 82
+  drawSliderPath(ctx, target)
+  ctx.stroke()
+  ctx.restore()
+
   ctx.strokeStyle = s.pathDim
-  ctx.lineWidth = 28
+  ctx.lineWidth = 44
   drawSliderPath(ctx, target)
   ctx.stroke()
   ctx.strokeStyle = s.path
-  ctx.lineWidth = 18
+  ctx.lineWidth = 30
   drawSliderPath(ctx, target)
   ctx.stroke()
+
+  ctx.save()
+  ctx.strokeStyle = '#fce76d'
+  ctx.lineWidth = 14
+  drawSliderSegment(ctx, target, beatT)
+  ctx.stroke()
+  ctx.restore()
+
+  drawSlideTimeHint(ctx, target, beatT)
+
   if (target.trail?.length > 1) {
     ctx.strokeStyle = s.trail
     ctx.lineWidth = 8
@@ -1404,10 +1560,72 @@ function drawSlideTarget(ctx, target, progress, theme) {
     for (const point of target.trail.slice(1)) ctx.lineTo(point.x, point.y)
     ctx.stroke()
   }
-  const marker = pointOnSlider(target, clamp(target.progress || progress * 0.25, 0, 1))
+
+  const beadPoint = pointOnSlider(target, clamp(target.progress, 0, 1))
+
   drawGlowCircle(ctx, target.x, target.y, 38, s.start, true)
   drawGlowCircle(ctx, target.endX, target.endY, 38, s.end, true)
-  drawGlowCircle(ctx, marker.x, marker.y, 14, '#ffffff', true)
+  drawSlideEndpointLabel(ctx, 'START', target.x, target.y - 58, s.start, progress < 1.08)
+  drawSlideEndpointLabel(ctx, 'END', target.endX, target.endY - 58, s.end, progress > 0.35)
+
+  drawSlideFollowCircle(ctx, beatPoint.x, beatPoint.y, target.dragging)
+  drawSlidePlayerBead(ctx, beadPoint.x, beadPoint.y, target.dragging)
+  ctx.restore()
+}
+
+function drawSlideTimeHint(ctx, target, beatT) {
+  const remaining = clamp((target.deadline - target.age) / Math.max(0.01, target.deadline - target.approach), 0, 1)
+  const cx = target.endX
+  const cy = target.endY
+  ctx.save()
+  ctx.globalAlpha = 0.92
+  ctx.strokeStyle = remaining < 0.24 ? HOT_PINK : '#fce76d'
+  ctx.lineWidth = 6
+  ctx.beginPath()
+  ctx.arc(cx, cy, 52, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * remaining)
+  ctx.stroke()
+  ctx.globalAlpha = 0.78
+  drawOutlinedText(ctx, beatT < 1 ? 'TIME' : 'NOW', cx, cy + 58, 17, beatT < 1 ? '#fce76d' : '#a8fbff', '#24124f', 'center', 1000, 3)
+  ctx.restore()
+}
+
+function drawSlideFollowCircle(ctx, x, y, dragging) {
+  const color = '#fce76d'
+  ctx.save()
+  ctx.globalAlpha = dragging ? 0.48 : 0.34
+  ctx.strokeStyle = color
+  ctx.lineWidth = 4
+  ctx.beginPath()
+  ctx.arc(x, y, dragging ? 42 : 34, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.restore()
+  drawGlowCircle(ctx, x, y, dragging ? 18 : 16, color, true)
+}
+
+function drawSlidePlayerBead(ctx, x, y, active) {
+  ctx.save()
+  ctx.shadowColor = '#a8fbff'
+  ctx.shadowBlur = active ? 24 : 14
+  ctx.fillStyle = '#ffffff'
+  ctx.strokeStyle = '#a8fbff'
+  ctx.lineWidth = active ? 8 : 6
+  ctx.beginPath()
+  ctx.arc(x, y, active ? 30 : 25, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+  ctx.shadowBlur = 0
+  ctx.fillStyle = '#a8fbff'
+  ctx.beginPath()
+  ctx.arc(x, y, active ? 14 : 11, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawSlideEndpointLabel(ctx, text, x, y, color, visible) {
+  if (!visible) return
+  ctx.save()
+  ctx.globalAlpha = 0.92
+  drawOutlinedText(ctx, text, x, y, 17, color, '#24124f', 'center', 1000, 3)
   ctx.restore()
 }
 
@@ -1421,6 +1639,17 @@ function drawSliderPath(ctx, target) {
   ctx.beginPath()
   ctx.moveTo(target.x, target.y)
   ctx.quadraticCurveTo(target.controlX, target.controlY, target.endX, target.endY)
+}
+
+function drawSliderSegment(ctx, target, endProgress) {
+  const steps = Math.max(2, Math.ceil(24 * clamp(endProgress, 0, 1)))
+  ctx.beginPath()
+  const first = pointOnSlider(target, 0)
+  ctx.moveTo(first.x, first.y)
+  for (let i = 1; i <= steps; i += 1) {
+    const point = pointOnSlider(target, clamp((i / steps) * endProgress, 0, 1))
+    ctx.lineTo(point.x, point.y)
+  }
 }
 
 function drawLeaderboardRow(state, row, rank, displayIndex, y, h) {
@@ -1443,14 +1672,14 @@ function drawLeaderboardRow(state, row, rank, displayIndex, y, h) {
   ctx.stroke()
   ctx.shadowBlur = 0
 
-  drawOutlinedText(ctx, `#${rank}`, 62, midY, 26, color, '#24124f', 'left', 1000, 3)
+  drawOutlinedText(ctx, `#${rank}`, 56, midY, rank >= 10 ? 24 : 26, color, '#24124f', 'left', 1000, 3)
   ctx.strokeStyle = 'rgba(255,255,255,0.52)'
   ctx.lineWidth = 2
   ctx.beginPath()
-  ctx.moveTo(116, y + 11)
-  ctx.lineTo(116, y + h - 11)
+  ctx.moveTo(128, y + 11)
+  ctx.lineTo(128, y + h - 11)
   ctx.stroke()
-  drawOutlinedText(ctx, row.name, 132, midY, row.name.length > 14 ? 19 : 22, color, '#24124f', 'left', 1000, 3)
+  drawOutlinedText(ctx, row.name, 146, midY, row.name.length > 14 ? 18 : 21, color, '#24124f', 'left', 1000, 3)
   drawOutlinedText(ctx, formatScore(row.score), 440, midY, 22, rank <= 3 ? SOFT_PINK : '#fce76d', '#24124f', 'right', 1000, 3)
   drawLeaderboardPortrait(state, row, 480, midY, color, 27)
   ctx.restore()
@@ -1475,7 +1704,7 @@ function drawLeaderboardPlayerRow(state, score, rank, y, h = 64, displayIndex = 
   ctx.lineWidth = 4
   ctx.stroke()
   ctx.shadowBlur = 0
-  drawOutlinedText(ctx, `YOU - #${rank}`, 68, midY, 30, '#ffe8ff', '#4a123c', 'left', 1000, 4)
+  drawOutlinedText(ctx, `YOU - #${rank}`, 56, midY, rank >= 10 ? 27 : 30, '#ffe8ff', '#4a123c', 'left', 1000, 4)
   drawOutlinedText(ctx, formatScore(score), 440, midY, 24, '#ffe8ff', '#4a123c', 'right', 1000, 3)
   drawLeaderboardPortrait(state, row, 482, midY, HOT_PINK, 30)
   ctx.restore()
@@ -1494,7 +1723,8 @@ function drawLeaderboardPortrait(state, row, x, y, color, r = 21) {
   ctx.clip()
   if (image?.complete && image.naturalWidth > 0) {
     const size = r * 2.35
-    ctx.drawImage(image, x - size / 2, y - size / 2, size, size)
+    const focusY = y + r * 0.1
+    ctx.drawImage(image, x - size / 2, focusY - size / 2, size, size)
   }
   ctx.restore()
   ctx.strokeStyle = color
@@ -1511,12 +1741,19 @@ function leaderboardRows() {
     { name: 'Shadow-Stalker', score: 92200, judgeId: 'coolman', skinId: 'default' },
     { name: 'Pixel-Champion', score: 89800, judgeId: 'dj', skinId: 'default' },
     { name: 'Chaos-Master', score: 87000, judgeId: 'blingbeak', skinId: 'maverick' },
-    { name: 'Gamer-King', score: 86200, judgeId: 'disco', skinId: 'headband' },
+    { name: 'Gamer-King', score: 86200, judgeId: 'disco', skinId: 'default' },
     { name: 'Neon-Knight', score: 85500, judgeId: 'coolman', skinId: 'king' },
     { name: 'Reflex-Ace', score: 85000, judgeId: 'dj', skinId: 'punk' },
     { name: 'Score-Demon', score: 84800, judgeId: 'blingbeak', skinId: 'default' },
     { name: 'Legend-Maker', score: 84700, judgeId: 'disco', skinId: 'galaxy_brain' },
   ]
+}
+
+function leaderboardDisplayRows(rows, playerScore) {
+  const playerIndex = leaderboardPlayerInsertIndex(rows, playerScore)
+  const entries = rows.map((row, index) => ({ row, rank: index + 1, score: row.score, player: false }))
+  entries.splice(playerIndex, 0, { player: true, rank: playerIndex + 1, score: playerScore })
+  return entries.slice(0, 10)
 }
 
 function leaderboardPlayerInsertIndex(rows, score) {
@@ -1620,44 +1857,6 @@ function drawScrollingConfetti(state) {
   }
 }
 
-function drawFireworks(state) {
-  const fireworks = state.fireworks || []
-  if (!fireworks.length) return
-
-  const image = state.assets.images.fireworkSheet
-  if (!image?.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) return
-
-  const ctx = state.ctx
-  const frameW = image.naturalWidth / FIREWORK_FRAME_COUNT
-  const frameH = image.naturalHeight
-
-  for (const firework of fireworks) {
-    const life = Math.max(0.01, firework.life || 0.75)
-    const progress = clamp(firework.age / life, 0, 0.999)
-    const frame = Math.min(FIREWORK_FRAME_COUNT - 1, Math.floor(progress * FIREWORK_FRAME_COUNT))
-    const fade = progress > 0.74 ? 1 - (progress - 0.74) / 0.26 : 1
-    const size = firework.size || 150
-    const drawW = size
-    const drawH = size * (frameH / frameW)
-
-    ctx.save()
-    ctx.globalAlpha = (firework.alpha ?? 1) * clamp(fade, 0, 1)
-    ctx.globalCompositeOperation = 'screen'
-    ctx.drawImage(
-      image,
-      frame * frameW,
-      0,
-      frameW,
-      frameH,
-      firework.x - drawW / 2,
-      firework.y - drawH / 2,
-      drawW,
-      drawH,
-    )
-    ctx.restore()
-  }
-}
-
 function drawToast(state) {
   if (!state.toast || state.toast.until <= state.time) return
   const ctx = state.ctx
@@ -1668,22 +1867,41 @@ function drawToast(state) {
 }
 
 function drawGlowCircle(ctx, x, y, radius, color, filled) {
+  const glow = !TOUCH_DEVICE
   ctx.save()
-  ctx.shadowColor = color
-  ctx.shadowBlur = 20
+  if (glow) {
+    ctx.shadowColor = color
+    ctx.shadowBlur = 20
+  }
   ctx.strokeStyle = color
   ctx.fillStyle = color
-  ctx.lineWidth = 7
+  ctx.lineWidth = glow ? 7 : 6
   ctx.beginPath()
   ctx.arc(x, y, radius, 0, Math.PI * 2)
   filled ? ctx.fill() : ctx.stroke()
-  ctx.shadowBlur = 0
+  if (glow) ctx.shadowBlur = 0
   ctx.strokeStyle = 'rgba(255,255,255,0.86)'
   ctx.lineWidth = 4
   ctx.beginPath()
   ctx.arc(x, y, Math.max(4, radius - 5), 0, Math.PI * 2)
   ctx.stroke()
   ctx.restore()
+}
+
+function drawResultsConfetti(state) {
+  const ctx = state.ctx
+  const clipTop = 370
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(0, clipTop, LOGICAL_WIDTH, LOGICAL_HEIGHT - clipTop)
+  ctx.clip()
+  drawScrollingConfetti(state)
+  ctx.restore()
+}
+
+function shouldSkipRunConfetti(state) {
+  if (state.screen === 'results') return true
+  return TOUCH_DEVICE && state.screen === 'run' && state.run?.status === 'playing'
 }
 
 function drawBar(ctx, x, y, w, h, value, lowColor, highColor) {
@@ -1718,8 +1936,21 @@ function judgeImage(state, judge, skinId) {
   return state.assets.judgeImages[judge.id]?.[skinId] || state.assets.judgeImages[judge.id]?.default
 }
 
+function equippedJudgeImage(state, judge) {
+  const equippedSkin = state.save.equippedSkins?.[judge.id] || 'default'
+  return judgeImage(state, judge, equippedSkin)
+}
+
 function drawIcon(ctx, image, x, y, size) {
   drawImage(ctx, image, x, y, size, size)
+}
+
+function drawIconFit(ctx, image, x, y, w, h) {
+  if (!image?.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) return
+  const scale = Math.min(w / image.naturalWidth, h / image.naturalHeight)
+  const drawW = image.naturalWidth * scale
+  const drawH = image.naturalHeight * scale
+  ctx.drawImage(image, x + (w - drawW) / 2, y + (h - drawH) / 2, drawW, drawH)
 }
 
 function drawImage(ctx, image, x, y, w, h) {
@@ -1782,10 +2013,10 @@ function ftuePrompt(run) {
     return { title: 'TAP LESSON', body: 'Tap when the outer ring meets the target.' }
   }
   if (run.stage.id === 2) {
-    return { title: 'SLIDE LESSON', body: 'Press GO, drag along the path, release on END.' }
+    return { title: 'SLIDE LESSON', body: 'Grab START and drag the ball on rails to END.' }
   }
   if (run.stage.id === 3) {
-    return { title: 'HOLD LESSON', body: 'Press, hold while the ring fills, release on time.' }
+    return { title: 'HOLD LESSON', body: 'Mostly holds — a few taps and slides will pop up.' }
   }
   if (run.stage.id === 4) {
     return { title: 'MIXED PRESSURE', body: 'Tap, slide, and hold. Misses cost HP.' }
@@ -1795,7 +2026,7 @@ function ftuePrompt(run) {
 
 function ftueResultButtonLabel(run) {
   if (!run.completed) return 'TRY AGAIN'
-  return 'MENU'
+  return 'TRY AGAIN'
 }
 
 function roundRect(ctx, x, y, width, height, radius) {

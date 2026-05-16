@@ -64,8 +64,6 @@ export function createGameState(canvas, ctx, assets) {
     save,
     run: null,
     effects: [],
-    fireworks: [],
-    nextAmbientFireworkAt: 0,
     toast: null,
     boostSelectPending: null,
     boostSelectUseDoubleCoins: true,
@@ -177,11 +175,10 @@ export function startRun(state, options) {
     continueOfferUntil: 0,
     continueDeclineCause: '',
     internalMissCause: '',
+    timeUpUntil: 0,
   }
   state.screen = 'run'
   state.effects = []
-  state.fireworks = []
-  state.nextAmbientFireworkAt = state.time + 1.2
   state.assets.startMusic(judge, state.save.settings.music)
 }
 

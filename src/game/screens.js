@@ -1,4 +1,4 @@
-import { JUDGES, LOGICAL_HEIGHT, LOGICAL_WIDTH, STAGES, gradeRank, isEndlessUnlocked, isStageUnlocked } from './rules.js'
+import { JUDGES, STAGES, gradeRank, isEndlessUnlocked, isStageUnlocked } from './rules.js'
 import {
   acceptContinue,
   applyRunResults,
@@ -16,7 +16,6 @@ import { handleRunPointerDown, handleRunPointerMove, handleRunPointerUp, updateR
 import { applyQueuedEffects } from './effects.js'
 
 export function updateGame(state) {
-  updateFireworks(state)
   updateRun(state)
   applyQueuedEffects(state)
 
@@ -121,6 +120,10 @@ export function handlePointerDown(state) {
     return
   }
   if (button.id === 'back' || button.id === 'resultsHome') {
+    if (state.screen === 'results' && state.run?.ftue && state.run.completed) {
+      state.save.ftueCompleted = true
+      persistSave(state.save)
+    }
     state.screen = 'home'
     return
   }
@@ -166,26 +169,37 @@ export function handlePointerDown(state) {
   }
   if (button.id === 'tryAgain') {
     const run = state.run
-    if (run?.mode === 'stage' && run.completed && gradeRank(run.grade) >= gradeRank('B')) {
-      if (run.ftue) {
-        state.save.ftueCompleted = true
-        persistSave(state.save)
+    if (run?.mode === 'stage' && run.completed) {
+      const canAdvance = run.stage.id === 1 || gradeRank(run.grade) >= gradeRank('B')
+      if (canAdvance) {
+        if (run.ftue) {
+          state.save.ftueCompleted = true
+          persistSave(state.save)
+        }
+        const nextId = run.stage.id + 1
+        if (nextId <= STAGES.length) {
+          beginRunWithBoostFlow(state, { kind: 'stage', stageId: nextId, ftue: false })
+          return
+        }
+        state.screen = 'stageSelect'
+        return
       }
-      state.screen = 'stageSelect'
+      beginRunWithBoostFlow(state, { kind: 'stage', stageId: run.stage.id })
     } else if (run?.mode === 'stage') beginRunWithBoostFlow(state, { kind: 'stage', stageId: run.stage.id })
     else beginRunWithBoostFlow(state, { kind: 'endless' })
+    return
+  }
+  if (button.id === 'ftueNextStage') {
+    state.save.ftueCompleted = true
+    persistSave(state.save)
+    beginRunWithBoostFlow(state, { kind: 'stage', stageId: 2, ftue: false })
     return
   }
   if (button.id === 'ftueContinue') {
     const run = state.run
     if (!run?.completed) {
       startStageRun(state, run?.stage?.id || 1, { ftue: true })
-      return
     }
-    state.save.ftueCompleted = true
-    persistSave(state.save)
-    showToast(state, 'Levels unlocked')
-    state.screen = 'home'
     return
   }
 }
@@ -257,30 +271,5 @@ function playResultSfxAt(state, run, elapsed, id, at, sfx) {
   if (run.resultsSfx[id] || elapsed < at) return
   run.resultsSfx[id] = true
   state.assets.playSfx(sfx, state.save.settings.sfx)
-}
-
-function updateFireworks(state) {
-  state.fireworks ??= []
-  for (const firework of state.fireworks) {
-    firework.age += state.deltaTime
-  }
-  state.fireworks = state.fireworks.filter((firework) => firework.age < firework.life)
-
-  if (state.time < (state.nextAmbientFireworkAt || 0)) return
-
-  const runIsPlaying = state.screen === 'run' && state.run?.status === 'playing'
-  if (!runIsPlaying) {
-    state.fireworks.push({
-      x: 72 + Math.random() * (LOGICAL_WIDTH - 144),
-      y: 92 + Math.random() * (LOGICAL_HEIGHT * 0.36),
-      size: 128 + Math.random() * 92,
-      age: 0,
-      life: 0.95,
-      alpha: 0.42,
-      ambient: true,
-    })
-  }
-
-  state.nextAmbientFireworkAt = state.time + 1.9 + Math.random() * 2.8
 }
 
