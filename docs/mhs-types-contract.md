@@ -481,3 +481,4 @@ export interface ToastState {
 - New buttons should route through `uiAction` commands so MHS can activate focused controls without synthetic pointer coordinates.
 - New render work should first add plain fields to `RenderState`; the renderer can stay canvas-backed until the MHS port.
 - When a screen's render data shape changes, update `tools/render-state-fixtures.mjs` and run `npm run smoke:render-state`.
+- When a drawing primitive is needed in browser and MHS, add it to the renderer facade first and cover it with `npm run smoke:renderer`.

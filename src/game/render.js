@@ -419,24 +419,33 @@ function drawStageSelectSpotlights(state) {
 
 function drawRoundTealBackButton(state, cx, cy, r) {
   const ctx = state.ctx
+  const renderer = state.gameRenderer
   const ring = '#a8fbff'
-  ctx.save()
-  ctx.shadowBlur = 0
-  ctx.fillStyle = 'rgba(8, 20, 40, 0.92)'
-  ctx.beginPath()
-  ctx.arc(cx, cy, r, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.strokeStyle = ring
-  ctx.lineWidth = 3
-  ctx.stroke()
-  ctx.shadowBlur = 0
-  drawIcon(ctx, state.assets.images.iconBack, cx - 18, cy - 18, 36)
-  ctx.restore()
+  if (renderer) {
+    renderer.push()
+    renderer.drawCircle('rgba(8, 20, 40, 0.92)', ring, 3, cx, cy, r)
+    renderer.drawImage('iconBack', cx - 18, cy - 18, 36, 36)
+    renderer.pop()
+  } else {
+    ctx.save()
+    ctx.shadowBlur = 0
+    ctx.fillStyle = 'rgba(8, 20, 40, 0.92)'
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = ring
+    ctx.lineWidth = 3
+    ctx.stroke()
+    ctx.shadowBlur = 0
+    drawIcon(ctx, state.assets.images.iconBack, cx - 18, cy - 18, 36)
+    ctx.restore()
+  }
   button(state, 'back', cx - r, cy - r, r * 2, r * 2)
 }
 
 function drawStageLevelCard(state, stage, y, h, unlocked) {
   const ctx = state.ctx
+  const renderer = state.gameRenderer
   const x = 30
   const w = LOGICAL_WIDTH - 60
   const accent = stage.cardColor || '#a8fbff'
@@ -444,17 +453,21 @@ function drawStageLevelCard(state, stage, y, h, unlocked) {
   const best = state.save.stageBests[stage.id]
   const grade = best?.grade
 
-  ctx.save()
-  ctx.shadowBlur = 0
-  ctx.fillStyle = unlocked ? 'rgba(12, 6, 32, 0.88)' : 'rgba(8, 4, 22, 0.92)'
-  roundRect(ctx, x, y, w, h, 14)
-  ctx.fill()
-  ctx.strokeStyle = border
-  ctx.lineWidth = unlocked ? 4 : 3
-  roundRect(ctx, x, y, w, h, 14)
-  ctx.stroke()
-  ctx.shadowBlur = 0
-  ctx.restore()
+  if (renderer) {
+    renderer.drawRoundedRect(unlocked ? 'rgba(12, 6, 32, 0.88)' : 'rgba(8, 4, 22, 0.92)', border, unlocked ? 4 : 3, x, y, w, h, 14)
+  } else {
+    ctx.save()
+    ctx.shadowBlur = 0
+    ctx.fillStyle = unlocked ? 'rgba(12, 6, 32, 0.88)' : 'rgba(8, 4, 22, 0.92)'
+    roundRect(ctx, x, y, w, h, 14)
+    ctx.fill()
+    ctx.strokeStyle = border
+    ctx.lineWidth = unlocked ? 4 : 3
+    roundRect(ctx, x, y, w, h, 14)
+    ctx.stroke()
+    ctx.shadowBlur = 0
+    ctx.restore()
+  }
 
   const avSize = 96
   const avX = x + 16
@@ -483,12 +496,17 @@ function drawStageLevelCard(state, stage, y, h, unlocked) {
   drawNeonPlayTriangle(ctx, triCx, triCy, 28, unlocked ? accent : '#6a6682', unlocked)
 
   if (!unlocked) {
-    ctx.save()
-    ctx.fillStyle = 'rgba(6, 4, 18, 0.45)'
-    roundRect(ctx, x + 2, y + 2, w - 4, h - 4, 16)
-    ctx.fill()
-    drawIcon(ctx, state.assets.images.iconLock, x + w / 2 - 28, y + h / 2 - 28, 56)
-    ctx.restore()
+    if (renderer) {
+      renderer.drawRoundedRect('rgba(6, 4, 18, 0.45)', null, 0, x + 2, y + 2, w - 4, h - 4, 16)
+      renderer.drawImage('iconLock', x + w / 2 - 28, y + h / 2 - 28, 56, 56)
+    } else {
+      ctx.save()
+      ctx.fillStyle = 'rgba(6, 4, 18, 0.45)'
+      roundRect(ctx, x + 2, y + 2, w - 4, h - 4, 16)
+      ctx.fill()
+      drawIcon(ctx, state.assets.images.iconLock, x + w / 2 - 28, y + h / 2 - 28, 56)
+      ctx.restore()
+    }
   }
 
   button(state, `stage:${stage.id}`, x, y, w, h)
@@ -711,23 +729,29 @@ function drawShopCoinPill(state) {
 
 function drawPowerUpRow(state, product, x, y, color, icon, label) {
   const ctx = state.ctx
+  const renderer = state.gameRenderer
   const w = 464
   const h = 48
-  ctx.save()
-  ctx.fillStyle = 'rgba(18, 9, 54, 0.76)'
-  roundRect(ctx, x, y, w, h, 24)
-  ctx.fill()
-  ctx.strokeStyle = color
-  ctx.lineWidth = 3
-  roundRect(ctx, x, y, w, h, 24)
-  ctx.stroke()
-  ctx.strokeStyle = 'rgba(255,255,255,0.45)'
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.moveTo(x + 76, y + 8)
-  ctx.lineTo(x + 76, y + h - 8)
-  ctx.stroke()
-  ctx.restore()
+  if (renderer) {
+    renderer.drawRoundedRect('rgba(18, 9, 54, 0.76)', color, 3, x, y, w, h, 24)
+    renderer.drawLine('rgba(255,255,255,0.45)', 2, x + 76, y + 8, x + 76, y + h - 8)
+  } else {
+    ctx.save()
+    ctx.fillStyle = 'rgba(18, 9, 54, 0.76)'
+    roundRect(ctx, x, y, w, h, 24)
+    ctx.fill()
+    ctx.strokeStyle = color
+    ctx.lineWidth = 3
+    roundRect(ctx, x, y, w, h, 24)
+    ctx.stroke()
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(x + 76, y + 8)
+    ctx.lineTo(x + 76, y + h - 8)
+    ctx.stroke()
+    ctx.restore()
+  }
   drawIcon(ctx, state.assets.images[icon], x + 19, y + 9, 30)
   drawOutlinedText(ctx, label, x + 94, y + h / 2, 21, color, '#2d1648', 'left', 1000, 3)
   drawOutlinedText(ctx, `${product.price} coins`, x + w - 18, y + h / 2, 20, '#ffe8ff', '#4a123c', 'right', 1000, 3)
@@ -736,6 +760,7 @@ function drawPowerUpRow(state, product, x, y, color, icon, label) {
 
 function drawShopCosmeticCard(state, item, x, y) {
   const ctx = state.ctx
+  const renderer = state.gameRenderer
   const w = 214
   const h = 158
   ctx.save()
@@ -743,13 +768,16 @@ function drawShopCosmeticCard(state, item, x, y) {
   ctx.translate(x + w / 2, y + h / 2)
   ctx.scale(scalePressed, scalePressed)
   ctx.translate(-(x + w / 2), -(y + h / 2))
-  ctx.fillStyle = 'rgba(18, 9, 54, 0.78)'
-  roundRect(ctx, x, y, w, h, 18)
-  ctx.fill()
-  ctx.strokeStyle = item.color
-  ctx.lineWidth = 3
-  roundRect(ctx, x, y, w, h, 18)
-  ctx.stroke()
+  if (renderer) renderer.drawRoundedRect('rgba(18, 9, 54, 0.78)', item.color, 3, x, y, w, h, 18)
+  else {
+    ctx.fillStyle = 'rgba(18, 9, 54, 0.78)'
+    roundRect(ctx, x, y, w, h, 18)
+    ctx.fill()
+    ctx.strokeStyle = item.color
+    ctx.lineWidth = 3
+    roundRect(ctx, x, y, w, h, 18)
+    ctx.stroke()
+  }
   if (item.image?.complete && item.image.naturalWidth > 0) {
     const boxW = w - 28
     const boxH = h - 44
@@ -1828,11 +1856,20 @@ function spriteButtonTextColor(sprite) {
 }
 
 function drawSpritePanel(state, x, y, w, h, sprite) {
-  drawImage(state.ctx, state.assets.images[sprite], x, y, w, h)
+  const renderer = state.gameRenderer
+  if (renderer) renderer.drawImage(sprite, x, y, w, h)
+  else drawImage(state.ctx, state.assets.images[sprite], x, y, w, h)
 }
 
 function drawScaledSpritePanel(state, x, y, w, h, sprite, scale) {
   const ctx = state.ctx
+  const renderer = state.gameRenderer
+  if (renderer) {
+    renderer.pushScale(scale, scale, x + w / 2, y + h / 2)
+    drawSpritePanel(state, x, y, w, h, sprite)
+    renderer.pop()
+    return
+  }
   ctx.save()
   ctx.translate(x + w / 2, y + h / 2)
   ctx.scale(scale, scale)

@@ -9,6 +9,7 @@
     "smoke:port": "node tools/port-readiness-smoke.mjs",
     "smoke:assets": "node tools/asset-readiness-smoke.mjs",
     "smoke:render-state": "node tools/render-state-fixtures-smoke.mjs",
+    "smoke:renderer": "node tools/renderer-facade-smoke.mjs",
     "fixtures:render-state": "node tools/render-state-fixtures.mjs --write",
     "preview": "vite preview"
   },

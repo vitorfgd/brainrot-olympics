@@ -7,6 +7,7 @@
 - Gameplay randomness: route through `state.random`; use a seeded RNG in MHS/debug builds when parity matters.
 - Render snapshot: plain data from `buildRenderState(state)`.
 - Render fixtures: run `npm run fixtures:render-state` to write representative screen snapshots to `docs/render-state-fixtures.json`.
+- Renderer facade: `createCanvasGameRenderer` mirrors the MHS drawing adapter shape; run `npm run smoke:renderer` after extending it.
 - Browser shell owns DOM canvas, pointer conversion, `requestAnimationFrame`, browser audio, and `localStorage`.
 - Platform-neutral asset paths live in `src/game/assetPaths.js`; the browser manifest only adds `import.meta.env.BASE_URL`.
 
@@ -38,6 +39,7 @@ xaml/game.xaml
 9. Map current sound IDs to named child `SoundComponent` entities under an `AudioHub`.
 10. Before copying assets into MHS, run `npm run smoke:assets` to catch missing or unmapped browser files.
 11. Use `docs/render-state-fixtures.json` as the first renderer parity target before wiring the live game loop.
+12. Keep new screen drawing on renderer-facade primitives where practical: rect, rounded rect, circle/ellipse, line, image, text, push/pop transforms.
 
 ## DrawingSurface Smoke Test
 Before porting gameplay, render a full-canvas green rectangle through `DrawingCommandsBuilder` and assign `gameViewModel.drawCommands = builder.build()`. If XAML appears but the green rectangle does not, check the `local:` namespace, the DrawingSurface binding, data context assignment, and matching dimensions first.

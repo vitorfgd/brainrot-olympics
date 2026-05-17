@@ -3,6 +3,9 @@ export function createCanvasGameRenderer(ctx, width, height, images = {}) {
     clear() {
       ctx.clearRect(0, 0, width, height)
     },
+    push() {
+      ctx.save()
+    },
     pushTranslate(x, y) {
       ctx.save()
       ctx.translate(x, y)
@@ -22,15 +25,47 @@ export function createCanvasGameRenderer(ctx, width, height, images = {}) {
     pop() {
       ctx.restore()
     },
+    translate(x, y) {
+      ctx.translate(x, y)
+    },
+    scale(scaleX, scaleY) {
+      ctx.scale(scaleX, scaleY)
+    },
+    rotate(degrees) {
+      ctx.rotate((degrees * Math.PI) / 180)
+    },
+    setAlpha(alpha) {
+      ctx.globalAlpha *= alpha
+    },
     drawRect(color, x, y, widthValue, heightValue) {
       ctx.fillStyle = color
       ctx.fillRect(x, y, widthValue, heightValue)
     },
-    drawEllipse(color, centerX, centerY, radiusX, radiusY) {
-      ctx.fillStyle = color
+    drawCircle(fillColor, strokeColor, lineWidth, centerX, centerY, radius) {
+      ctx.beginPath()
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2)
+      if (fillColor) {
+        ctx.fillStyle = fillColor
+        ctx.fill()
+      }
+      if (strokeColor && lineWidth > 0) {
+        ctx.strokeStyle = strokeColor
+        ctx.lineWidth = lineWidth
+        ctx.stroke()
+      }
+    },
+    drawEllipse(fillColor, strokeColor, lineWidth, centerX, centerY, radiusX, radiusY) {
       ctx.beginPath()
       ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2)
-      ctx.fill()
+      if (fillColor) {
+        ctx.fillStyle = fillColor
+        ctx.fill()
+      }
+      if (strokeColor && lineWidth > 0) {
+        ctx.strokeStyle = strokeColor
+        ctx.lineWidth = lineWidth
+        ctx.stroke()
+      }
     },
     drawRoundedRect(fillColor, strokeColor, lineWidth, x, y, widthValue, heightValue, radius) {
       roundedRectPath(ctx, x, y, widthValue, heightValue, radius)
@@ -52,9 +87,9 @@ export function createCanvasGameRenderer(ctx, width, height, images = {}) {
       ctx.lineTo(x2, y2)
       ctx.stroke()
     },
-    drawImage(imageId, x, y, widthValue, heightValue) {
-      const image = images[imageId]
-      if (!image) return
+    drawImage(imageOrId, x, y, widthValue, heightValue) {
+      const image = typeof imageOrId === 'string' ? images[imageOrId] : imageOrId
+      if (!image?.complete || image.naturalWidth <= 0) return
       ctx.drawImage(image, x, y, widthValue, heightValue)
     },
     drawText(text, x, y, widthValue, heightValue, style = {}) {
@@ -63,6 +98,12 @@ export function createCanvasGameRenderer(ctx, width, height, images = {}) {
       ctx.textAlign = style.align || 'left'
       ctx.textBaseline = 'middle'
       const tx = style.align === 'center' ? x + widthValue / 2 : style.align === 'right' ? x + widthValue : x
+      if (style.strokeColor && style.strokeWidth > 0) {
+        ctx.strokeStyle = style.strokeColor
+        ctx.lineWidth = style.strokeWidth
+        ctx.lineJoin = 'round'
+        ctx.strokeText(text, tx, y + heightValue / 2, widthValue)
+      }
       ctx.fillText(text, tx, y + heightValue / 2, widthValue)
     },
   }
