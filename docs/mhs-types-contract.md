@@ -480,3 +480,4 @@ export interface ToastState {
 - New images/audio should get stable IDs first, then browser URLs in `assetsManifest.js`, then MHS static assets later.
 - New buttons should route through `uiAction` commands so MHS can activate focused controls without synthetic pointer coordinates.
 - New render work should first add plain fields to `RenderState`; the renderer can stay canvas-backed until the MHS port.
+- When a screen's render data shape changes, update `tools/render-state-fixtures.mjs` and run `npm run smoke:render-state`.
