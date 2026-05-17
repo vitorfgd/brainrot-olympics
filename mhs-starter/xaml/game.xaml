@@ -1,0 +1,10 @@
+<ui:CustomUiView
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:ui="using:MetaHorizon.UI"
+  xmlns:local="using:MetaHorizon.Drawing"
+  Width="540"
+  Height="960">
+  <!-- Adjust xmlns:ui and xmlns:local to match the MHS project namespaces if needed. -->
+  <local:DrawingSurface Commands="{Binding drawCommands}" />
+</ui:CustomUiView>
