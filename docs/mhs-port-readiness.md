@@ -41,5 +41,8 @@ xaml/game.xaml
 11. Use `docs/render-state-fixtures.json` as the first renderer parity target before wiring the live game loop.
 12. Keep new screen drawing on renderer-facade primitives where practical: rect, rounded rect, circle/ellipse, line, image, text, push/pop transforms.
 
+## Scaffold Handoff
+Use [mhs-port-scaffold.md](C:\Users\Vitor\Documents\Meta\brain-rot-olympics-base\docs\mhs-port-scaffold.md) as the first-port working doc. It breaks the MHS project into file responsibilities, first smoke test, fixture-first rendering, input mapping, save shape, audio hub setup, and the gameplay-port order.
+
 ## DrawingSurface Smoke Test
 Before porting gameplay, render a full-canvas green rectangle through `DrawingCommandsBuilder` and assign `gameViewModel.drawCommands = builder.build()`. If XAML appears but the green rectangle does not, check the `local:` namespace, the DrawingSurface binding, data context assignment, and matching dimensions first.
