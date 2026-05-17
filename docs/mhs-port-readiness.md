@@ -2,11 +2,12 @@
 
 ## Fixed Contract
 - Logical canvas: `540 x 960`.
-- Input commands: `pointerDown`, `pointerMove`, `pointerUp`, `pointerCancel`.
+- Input commands: `pointerDown`, `pointerMove`, `pointerUp`, `pointerCancel`, `uiAction`.
 - Core game events: `soundRequested`, `musicRequested`, `musicSettingChanged`, `audioUnlockRequested`, `saveRequested`, `screenChanged`, `runCompleted`.
 - Gameplay randomness: route through `state.random`; use a seeded RNG in MHS/debug builds when parity matters.
 - Render snapshot: plain data from `buildRenderState(state)`.
 - Browser shell owns DOM canvas, pointer conversion, `requestAnimationFrame`, browser audio, and `localStorage`.
+- Platform-neutral asset paths live in `src/game/assetPaths.js`; the browser manifest only adds `import.meta.env.BASE_URL`.
 
 ## MHS Target Layout
 ```text
@@ -34,6 +35,7 @@ xaml/game.xaml
 7. Render in late update by converting `RenderState` into `DrawingCommandsBuilder` commands.
 8. Map current browser `AssetIds` to MHS `TextureAsset("@sprites/...")` declarations.
 9. Map current sound IDs to named child `SoundComponent` entities under an `AudioHub`.
+10. Before copying assets into MHS, run `npm run smoke:assets` to catch missing or unmapped browser files.
 
 ## DrawingSurface Smoke Test
 Before porting gameplay, render a full-canvas green rectangle through `DrawingCommandsBuilder` and assign `gameViewModel.drawCommands = builder.build()`. If XAML appears but the green rectangle does not, check the `local:` namespace, the DrawingSurface binding, data context assignment, and matching dimensions first.

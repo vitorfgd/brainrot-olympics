@@ -250,7 +250,8 @@ export type GameInputCommand =
   | { type: 'pointerDown'; x: number; y: number; pointerId: number }
   | { type: 'pointerMove'; x: number; y: number; pointerId: number }
   | { type: 'pointerUp'; x: number; y: number; pointerId: number }
-  | { type: 'pointerCancel'; x: number; y: number; pointerId: number };
+  | { type: 'pointerCancel'; x: number; y: number; pointerId: number }
+  | { type: 'uiAction'; actionId: string };
 
 export type GameEvent =
   | { type: 'soundRequested'; soundId: string; volumeScale: number; enabled: boolean }
@@ -477,4 +478,5 @@ export interface ToastState {
 - Browser-only objects must stay optional and isolated: canvas context, loaded images, audio elements, localStorage, DOM events.
 - New audio/save/toast actions should become `GameEvent` variants before they call platform services.
 - New images/audio should get stable IDs first, then browser URLs in `assetsManifest.js`, then MHS static assets later.
+- New buttons should route through `uiAction` commands so MHS can activate focused controls without synthetic pointer coordinates.
 - New render work should first add plain fields to `RenderState`; the renderer can stay canvas-backed until the MHS port.

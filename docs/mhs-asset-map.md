@@ -2,6 +2,7 @@
 
 Use this as the starting point for future MHS `Assets.ts` static declarations.
 Browser paths are relative to `public/`. MHS paths should become static string literals such as `new TextureAsset("@sprites/ui/home-logo.png")`.
+The source of truth for browser-relative paths is `src/game/assetPaths.js`; run `npm run smoke:assets` after changing assets.
 
 ## Core UI Images
 

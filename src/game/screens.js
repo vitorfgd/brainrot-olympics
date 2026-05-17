@@ -51,6 +51,11 @@ export function updateGame(state) {
 }
 
 export function handleGameCommand(state, command) {
+  if (command.type === 'uiAction') {
+    requestAudioUnlock(state)
+    handleUiAction(state, command.actionId)
+    return
+  }
   applyInputCommandToPointer(state, command)
   if (command.type === 'pointerDown') handlePointerDown(state)
   else if (command.type === 'pointerMove') handlePointerMove(state)
@@ -62,40 +67,12 @@ export function handlePointerDown(state) {
   const button = findButton(state)
 
   if (state.screen === 'run' && state.run?.status === 'continueOffer') {
-    if (button?.id === 'continueBuy') {
-      playClick(state)
-      acceptContinue(state)
-      return
-    }
-    if (button?.id === 'continueDecline') {
-      playCancelClick(state)
-      declineContinue(state)
-      return
-    }
+    if (button) handleUiAction(state, button.id)
     return
   }
 
   if (state.screen === 'boostSelect') {
-    if (button?.id === 'boostToggleDouble') {
-      playClick(state)
-      state.boostSelectUseDoubleCoins = !state.boostSelectUseDoubleCoins
-      return
-    }
-    if (button?.id === 'boostToggleShield') {
-      playClick(state)
-      state.boostSelectUseComboShield = !state.boostSelectUseComboShield
-      return
-    }
-    if (button?.id === 'boostSelectGo') {
-      playClick(state)
-      commitBoostSelection(state)
-      return
-    }
-    if (button?.id === 'boostSelectCancel') {
-      playCancelClick(state)
-      cancelBoostSelection(state)
-      return
-    }
+    if (button) handleUiAction(state, button.id)
     return
   }
 
@@ -105,88 +82,117 @@ export function handlePointerDown(state) {
   }
 
   if (!button) return
-  if (!isToggleButton(button.id)) {
-    if (isCancelButton(button.id)) playCancelClick(state)
+  handleUiAction(state, button.id)
+}
+
+export function handleUiAction(state, actionId) {
+  if (!isKnownAction(actionId)) return false
+  if (!isToggleButton(actionId)) {
+    if (isCancelButton(actionId)) playCancelClick(state)
     else playClick(state)
   }
 
-  if (button.id === 'playEndless') {
+  if (actionId === 'continueBuy') {
+    acceptContinue(state)
+    return true
+  }
+  if (actionId === 'continueDecline') {
+    declineContinue(state)
+    return true
+  }
+  if (actionId === 'boostToggleDouble') {
+    state.boostSelectUseDoubleCoins = !state.boostSelectUseDoubleCoins
+    return true
+  }
+  if (actionId === 'boostToggleShield') {
+    state.boostSelectUseComboShield = !state.boostSelectUseComboShield
+    return true
+  }
+  if (actionId === 'boostSelectGo') {
+    commitBoostSelection(state)
+    return true
+  }
+  if (actionId === 'boostSelectCancel') {
+    cancelBoostSelection(state)
+    return true
+  }
+  if (actionId === 'playEndless') {
     if (!isEndlessUnlocked(state.save)) {
       showToast(state, `Clear Stage ${STAGES.length} to unlock Endless`)
-      return
+      return true
     }
     beginRunWithBoostFlow(state, { kind: 'endless' })
-    return
+    return true
   }
-  if (button.id === 'playEndlessLocked') {
+  if (actionId === 'playEndlessLocked') {
     showToast(state, `Clear Stage ${STAGES.length} to unlock Endless`)
-    return
+    return true
   }
-  if (button.id === 'stageSelect') {
+  if (actionId === 'stageSelect') {
     state.screen = 'stageSelect'
-    return
+    return true
   }
-  if (button.id === 'leaderboard') {
+  if (actionId === 'leaderboard') {
     state.screen = 'leaderboard'
-    return
+    return true
   }
-  if (button.id === 'shop') {
+  if (actionId === 'shop') {
     state.screen = 'shop'
-    return
+    return true
   }
-  if (button.id === 'settings') {
+  if (actionId === 'settings') {
     state.screen = 'settings'
-    return
+    return true
   }
-  if (button.id === 'back' || button.id === 'resultsHome') {
+  if (actionId === 'back' || actionId === 'resultsHome') {
     if (state.screen === 'results' && state.run?.ftue && state.run.completed) {
       state.save.ftueCompleted = true
       persistSave(state)
     }
     state.screen = 'home'
-    return
+    return true
   }
-  if (button.id.startsWith('stage:')) {
-    const stageId = Number(button.id.split(':')[1])
+  if (actionId.startsWith('stage:')) {
+    const stageId = Number(actionId.split(':')[1])
     if (!isStageUnlocked(state.save, stageId)) {
       showToast(state, `Clear Stage ${stageId - 1} to unlock`)
-      return
+      return true
     }
     beginRunWithBoostFlow(state, {
       kind: 'stage',
       stageId,
       ftue: false,
     })
-    return
+    return true
   }
-  if (button.id.startsWith('skin:')) {
-    const [, judgeId, skinId] = button.id.split(':')
+  if (actionId.startsWith('skin:')) {
+    const [, judgeId, skinId] = actionId.split(':')
     buyOrEquipSkin(state, judgeId, skinId)
-    return
+    return true
   }
-  if (button.id.startsWith('boost:')) {
-    buyBoostProduct(state, button.id.split(':')[1])
-    return
+  if (actionId.startsWith('boost:')) {
+    buyBoostProduct(state, actionId.split(':')[1])
+    return true
   }
-  if (button.id === 'toggleMusic') {
+  if (actionId === 'toggleMusic') {
     const enabled = !state.save.settings.music
     playToggleClick(state, enabled)
     state.save.settings.music = enabled
     requestMusicSettingsSync(state, state.save.settings.music)
     persistSave(state)
     showToast(state, `Music ${state.save.settings.music ? 'on' : 'off'}`)
-    return
+    return true
   }
-  if (button.id === 'toggleSfx') {
+  if (actionId === 'toggleSfx') {
     const enabled = !state.save.settings.sfx
     if (!enabled) playToggleClick(state, enabled)
     state.save.settings.sfx = enabled
     persistSave(state)
     if (enabled) playToggleClick(state, enabled)
     showToast(state, `SFX ${state.save.settings.sfx ? 'on' : 'off'}`)
-    return
+    return true
   }
-  if (button.id === 'tryAgain') {
+  if (actionId === 'tryAgain') {
     const run = state.run
     if (run?.mode === 'stage' && run.completed) {
       const canAdvance = run.stage.id === 1 || gradeRank(run.grade) >= gradeRank('B')
@@ -198,29 +204,30 @@ export function handlePointerDown(state) {
         const nextId = run.stage.id + 1
         if (nextId <= STAGES.length) {
           beginRunWithBoostFlow(state, { kind: 'stage', stageId: nextId, ftue: false })
-          return
+          return true
         }
         state.screen = 'stageSelect'
-        return
+        return true
       }
       beginRunWithBoostFlow(state, { kind: 'stage', stageId: run.stage.id })
     } else if (run?.mode === 'stage') beginRunWithBoostFlow(state, { kind: 'stage', stageId: run.stage.id })
     else beginRunWithBoostFlow(state, { kind: 'endless' })
-    return
+    return true
   }
-  if (button.id === 'ftueNextStage') {
+  if (actionId === 'ftueNextStage') {
     state.save.ftueCompleted = true
     persistSave(state)
     beginRunWithBoostFlow(state, { kind: 'stage', stageId: 2, ftue: false })
-    return
+    return true
   }
-  if (button.id === 'ftueContinue') {
+  if (actionId === 'ftueContinue') {
     const run = state.run
     if (!run?.completed) {
       startStageRun(state, run?.stage?.id || 1, { ftue: true })
     }
-    return
+    return true
   }
+  return false
 }
 
 export function handlePointerMove(state) {
@@ -257,11 +264,38 @@ function playToggleClick(state, enabled) {
 }
 
 function isCancelButton(id) {
-  return id === 'back' || id === 'resultsHome'
+  return id === 'back' || id === 'resultsHome' || id === 'continueDecline' || id === 'boostSelectCancel'
 }
 
 function isToggleButton(id) {
   return id === 'toggleMusic' || id === 'toggleSfx'
+}
+
+function isKnownAction(id) {
+  return (
+    id === 'continueBuy'
+    || id === 'continueDecline'
+    || id === 'boostToggleDouble'
+    || id === 'boostToggleShield'
+    || id === 'boostSelectGo'
+    || id === 'boostSelectCancel'
+    || id === 'playEndless'
+    || id === 'playEndlessLocked'
+    || id === 'stageSelect'
+    || id === 'leaderboard'
+    || id === 'shop'
+    || id === 'settings'
+    || id === 'back'
+    || id === 'resultsHome'
+    || id === 'toggleMusic'
+    || id === 'toggleSfx'
+    || id === 'tryAgain'
+    || id === 'ftueNextStage'
+    || id === 'ftueContinue'
+    || id.startsWith('stage:')
+    || id.startsWith('skin:')
+    || id.startsWith('boost:')
+  )
 }
 
 function syncMenuMusic(state) {

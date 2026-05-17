@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { createPointerCommand } from '../src/game/commands.js'
+import { createPointerCommand, createUiActionCommand } from '../src/game/commands.js'
 import { drainGameEvents } from '../src/game/events.js'
 import { updateGame, handleGameCommand } from '../src/game/screens.js'
 import { createGameState } from '../src/game/state.js'
@@ -49,5 +49,11 @@ events = drainGameEvents(state)
 assert.equal(state.save.settings.sfx, false)
 assert.equal(events.some((event) => event.type === 'saveRequested'), true)
 assert.equal(events.some((event) => event.type === 'toastRequested'), true)
+
+handleGameCommand(state, createUiActionCommand('toggleMusic'))
+events = drainGameEvents(state)
+
+assert.equal(state.save.settings.music, false)
+assert.equal(events.some((event) => event.type === 'musicSettingChanged' && event.enabled === false), true)
 
 console.log('Port-readiness smoke passed')

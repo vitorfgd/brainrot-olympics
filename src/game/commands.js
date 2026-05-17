@@ -2,6 +2,10 @@ export function createPointerCommand(type, x, y, pointerId = 0) {
   return { type, x, y, pointerId }
 }
 
+export function createUiActionCommand(actionId) {
+  return { type: 'uiAction', actionId }
+}
+
 export function applyInputCommandToPointer(state, command) {
   if (typeof command.x !== 'number' || typeof command.y !== 'number') return
   state.pointer.x = command.x
