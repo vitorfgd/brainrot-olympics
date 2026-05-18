@@ -25,6 +25,10 @@ import { requestRunMusic, requestSound, requestStopRunMusic } from './events.js'
 import { randomChoice, randomFloat } from './rng.js'
 
 const TARGET_RADIUS = 44
+const TAP_CHAIN_COUNT = 3
+const TAP_CHAIN_SPACING = 0.48
+const TAP_CHAIN_MIN_POINT_GAP = 96
+const TAP_CHAIN_MAX_POINT_GAP = 210
 const MISS_WINDOW = 0.35
 const SPAWN_PREVIEW_LEAD = 0.56
 const SLIDE_START_RADIUS_BONUS = 34
@@ -89,10 +93,11 @@ export function updateRun(state) {
 
   const profile = difficultyProfile(run)
   const liveTargets = run.targets.filter((target) => !target.resolved).length
-  if (state.time >= run.nextSpawnAt - SPAWN_PREVIEW_LEAD && liveTargets < profile.maxLiveTargets) {
+  const sequenceActive = hasActiveTapSequence(run)
+  if (!sequenceActive && state.time >= run.nextSpawnAt - SPAWN_PREVIEW_LEAD && liveTargets < profile.maxLiveTargets) {
     prepareUpcomingTarget(run, profile, state.time, state.random)
   }
-  if (state.time >= run.nextSpawnAt && liveTargets < profile.maxLiveTargets) {
+  if (!sequenceActive && state.time >= run.nextSpawnAt && liveTargets < profile.maxLiveTargets) {
     const target = spawnTarget(run, profile, state.random)
     if (isFtueTapOpening(run) && target.id === 0) showCaption(state, run, 'TAP', 1.1)
     requestSound(state, 'targetSpawn')
@@ -142,6 +147,11 @@ export function handleRunPointerDown(state) {
 
   const target = findTargetAt(run, x, y)
   if (!target) return false
+
+  if (target.sequenceGroup != null && !isSequenceTargetAvailable(run, target)) {
+    resolveHit(state, target, 'miss', 'WRONG ORDER')
+    return true
+  }
 
   if (target.kind === 'slide') {
     const started = target.progress > 0
@@ -253,8 +263,12 @@ export function spawnTarget(run, profile, rng = Math.random) {
   const upcoming = run.upcomingTarget
   const kind = upcoming?.kind || resolveTargetKind(run)
   const point = upcoming?.point || chooseTargetPoint(run, kind, rng)
+  if (kind === 'tapChain') {
+    return spawnTapChainTargets(run, profile, point, rng)
+  }
+
   const target = {
-    id: run.spawnCount,
+    id: nextTargetId(run),
     kind,
     x: point.x,
     y: point.y,
@@ -292,6 +306,81 @@ export function spawnTarget(run, profile, rng = Math.random) {
   run.spawnCount += 1
   run.totalNotes += 1
   return target
+}
+
+function spawnTapChainTargets(run, profile, firstPoint, rng = Math.random) {
+  const points = createTapChainPoints(run, firstPoint, rng)
+  const sequenceGroup = nextTargetId(run)
+  let firstTarget = null
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]
+    const prev = points[index - 1]
+    const next = points[index + 1]
+    const target = {
+      id: index === 0 ? sequenceGroup : nextTargetId(run),
+      kind: 'tap',
+      x: point.x,
+      y: point.y,
+      age: -index * TAP_CHAIN_SPACING,
+      approach: profile.approach,
+      deadline: profile.approach + MISS_WINDOW,
+      resolved: false,
+      removed: false,
+      pulse: randomFloat(rng, 0, Math.PI * 2),
+      sequenceGroup,
+      sequenceIndex: index,
+      sequenceCount: points.length,
+      sequenceSpacing: TAP_CHAIN_SPACING,
+      sequencePrevX: prev?.x,
+      sequencePrevY: prev?.y,
+      sequenceNextX: next?.x,
+      sequenceNextY: next?.y,
+    }
+    if (!firstTarget) firstTarget = target
+    run.targets.push(target)
+  }
+  run.upcomingTarget = null
+  run.spawnCount += 1
+  run.totalNotes += points.length
+  return firstTarget
+}
+
+function nextTargetId(run) {
+  if (!Number.isFinite(run.nextTargetId)) run.nextTargetId = run.spawnCount || 0
+  const id = run.nextTargetId
+  run.nextTargetId += 1
+  return id
+}
+
+function createTapChainPoints(run, firstPoint, rng = Math.random) {
+  const region = judgeSpawnRegion(run)
+  const points = [firstPoint]
+  while (points.length < TAP_CHAIN_COUNT) {
+    const previous = points[points.length - 1]
+    let best = null
+    let bestScore = -Infinity
+    for (let i = 0; i < 32; i += 1) {
+      const point = randomPointInRegion(region, rng)
+      const score = tapChainPointScore(run, points, previous, point)
+      if (score > bestScore) {
+        best = point
+        bestScore = score
+      }
+    }
+    points.push(best || randomPointInRegion(region, rng))
+  }
+  return points
+}
+
+function tapChainPointScore(run, points, previous, point) {
+  const fromPrev = distance(point.x, point.y, previous.x, previous.y)
+  if (fromPrev < TAP_CHAIN_MIN_POINT_GAP || fromPrev > TAP_CHAIN_MAX_POINT_GAP) return -Infinity
+  for (const existing of points) {
+    if (distance(point.x, point.y, existing.x, existing.y) < TAP_CHAIN_MIN_POINT_GAP) return -Infinity
+  }
+  const nearest = nearestLiveTargetPoint(run, point, 'tap')
+  const idealGap = (TAP_CHAIN_MIN_POINT_GAP + TAP_CHAIN_MAX_POINT_GAP) / 2
+  return nearest - Math.abs(fromPrev - idealGap) * 0.45 - Math.abs(point.y - previous.y) * 0.08
 }
 
 function shouldShowHoldReleaseCue(target) {
@@ -345,6 +434,14 @@ function snapshotFatalTarget(target) {
     approach: target.approach,
     deadline: target.deadline,
     pulse: target.pulse || 0,
+    sequenceGroup: target.sequenceGroup,
+    sequenceIndex: target.sequenceIndex,
+    sequenceCount: target.sequenceCount,
+    sequenceSpacing: target.sequenceSpacing,
+    sequencePrevX: target.sequencePrevX,
+    sequencePrevY: target.sequencePrevY,
+    sequenceNextX: target.sequenceNextX,
+    sequenceNextY: target.sequenceNextY,
   }
   if (target.kind === 'slide') {
     Object.assign(snap, {
@@ -516,6 +613,20 @@ function findTargetAt(run, x, y) {
     }
   }
   return null
+}
+
+function isSequenceTargetAvailable(run, target) {
+  if (target.sequenceGroup == null || target.sequenceIndex == null) return true
+  return !run.targets.some(
+    (item) =>
+      item.sequenceGroup === target.sequenceGroup
+      && !item.resolved
+      && (item.sequenceIndex ?? 0) < target.sequenceIndex,
+  )
+}
+
+function hasActiveTapSequence(run) {
+  return run.targets.some((target) => target.sequenceGroup != null && !target.resolved)
 }
 
 function chooseTargetPoint(run, kind = null, rng = Math.random) {

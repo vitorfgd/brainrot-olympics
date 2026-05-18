@@ -95,9 +95,9 @@ export const JudgeImageUrls = {
 }
 
 export const StagePortraitUrls = {
-  [AssetIds.stagePortraits.stage1]: 'characters/BlingBeak.png',
-  [AssetIds.stagePortraits.stage2]: 'characters/stage-sprites/ferret-default.png',
-  [AssetIds.stagePortraits.stage3]: 'characters/stage-sprites/manatee-default.png',
-  [AssetIds.stagePortraits.stage4]: 'characters/stage-sprites/lemur-default.png',
+  [AssetIds.stagePortraits.stage1]: 'characters/stage-sprites/ferret-default.png',
+  [AssetIds.stagePortraits.stage2]: 'characters/stage-sprites/manatee-default.png',
+  [AssetIds.stagePortraits.stage3]: 'characters/stage-sprites/lemur-default.png',
+  [AssetIds.stagePortraits.stage4]: 'characters/stage-sprites/vulture-default.png',
   [AssetIds.stagePortraits.stage5]: 'characters/stage-sprites/vulture-alt2.png',
 }

@@ -138,6 +138,7 @@ export function handleUiAction(state, actionId) {
   }
   if (actionId === 'shop') {
     state.screen = 'shop'
+    state.shopSelectedJudgeId ||= JUDGES[0]?.id || 'blingbeak'
     return true
   }
   if (actionId === 'settings') {
@@ -168,6 +169,13 @@ export function handleUiAction(state, actionId) {
   if (actionId.startsWith('skin:')) {
     const [, judgeId, skinId] = actionId.split(':')
     buyOrEquipSkin(state, judgeId, skinId)
+    return true
+  }
+  if (actionId.startsWith('shopJudge:')) {
+    const judgeId = actionId.split(':')[1]
+    if (JUDGES.some((judge) => judge.id === judgeId)) {
+      state.shopSelectedJudgeId = judgeId
+    }
     return true
   }
   if (actionId.startsWith('boost:')) {
@@ -294,6 +302,7 @@ function isKnownAction(id) {
     || id === 'ftueContinue'
     || id.startsWith('stage:')
     || id.startsWith('skin:')
+    || id.startsWith('shopJudge:')
     || id.startsWith('boost:')
   )
 }

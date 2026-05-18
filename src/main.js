@@ -8,6 +8,7 @@ import { drawGame } from './game/render.js'
 import {
   handleBrowserGameEvents,
   loadBrowserSave,
+  persistBrowserSave,
   pointerCommandFromEvent,
   resizeBrowserCanvas,
 } from './platform/browser.js'
@@ -19,6 +20,22 @@ const renderer = createCanvasGameRenderer(ctx, LOGICAL_WIDTH, LOGICAL_HEIGHT, as
 const state = createGameState({ save: loadBrowserSave(), ctx, assets })
 state.gameRenderer = renderer
 handleBrowserGameEvents(state, assets)
+
+if (import.meta.env.DEV) {
+  window.brainrotDev ??= {}
+  window.brainrotDev.addCoins = (amount = 100000) => {
+    state.save.coins = Math.max(0, Math.round((state.save.coins || 0) + Number(amount || 0)))
+    persistBrowserSave(state.save)
+    handleBrowserGameEvents(state, assets)
+    return state.save.coins
+  }
+  window.brainrotDev.setCoins = (amount = 100000) => {
+    state.save.coins = Math.max(0, Math.round(Number(amount || 0)))
+    persistBrowserSave(state.save)
+    handleBrowserGameEvents(state, assets)
+    return state.save.coins
+  }
+}
 
 function frame(now) {
   const seconds = now / 1000

@@ -10,10 +10,10 @@ import {
 } from './rules.js'
 
 const SHOP_COSMETICS = [
-  { judgeId: 'blingbeak', skinId: 'partyhat', color: '#5cff7b' },
-  { judgeId: 'disco', skinId: 'disco', color: '#a8fbff' },
-  { judgeId: 'coolman', skinId: 'king', color: '#a8fbff' },
-  { judgeId: 'dj', skinId: 'punk', color: '#fce76d' },
+  { judgeId: 'blingbeak', skinId: 'partyhat', color: '#5cff7b', imageId: 'stage.ferret.alt1' },
+  { judgeId: 'disco', skinId: 'disco', color: '#a8fbff', imageId: 'stage.manatee.alt1' },
+  { judgeId: 'coolman', skinId: 'king', color: '#a8fbff', imageId: 'stage.lemur.alt1' },
+  { judgeId: 'dj', skinId: 'punk', color: '#fce76d', imageId: 'stage.vulture.alt1' },
 ]
 
 const LEADERBOARD_ROWS = [
@@ -384,6 +384,14 @@ function serializeTarget(target) {
     hitQuality: target.hitQuality || null,
     vanishStartedAt: target.vanishStartedAt || 0,
     removeAt: target.removeAt || 0,
+    sequenceGroup: target.sequenceGroup ?? null,
+    sequenceIndex: target.sequenceIndex ?? null,
+    sequenceCount: target.sequenceCount ?? null,
+    sequenceSpacing: target.sequenceSpacing ?? null,
+    sequencePrevX: target.sequencePrevX ?? null,
+    sequencePrevY: target.sequencePrevY ?? null,
+    sequenceNextX: target.sequenceNextX ?? null,
+    sequenceNextY: target.sequenceNextY ?? null,
   }
   if (target.kind === 'slide') {
     return {
@@ -452,7 +460,7 @@ function buildShopSkinState(state, item) {
     skinId: item.skinId,
     name: skin?.name || 'Skin',
     price: skin?.price || 0,
-    imageId: skin?.imageId || null,
+    imageId: item.imageId || skin?.imageId || null,
     color: item.color,
     owned,
     equipped,

@@ -28,6 +28,20 @@ const RESULT_MEDAL_CENTER_FIX = {
   A: -7,
   S: 17,
 }
+const SHOP_STAGE_SPRITES = {
+  'blingbeak:default': 'stage.vulture.alt1',
+  'blingbeak:partyhat': 'stage.vulture.default',
+  'blingbeak:maverick': 'stage.vulture.alt2',
+  'disco:default': 'stage.ferret.alt1',
+  'disco:disco': 'stage.ferret.alt2',
+  'disco:galaxy_brain': 'stage.ferret.default',
+  'coolman:default': 'stage.manatee.alt1',
+  'coolman:king': 'stage.manatee.default',
+  'coolman:dolphin': 'stage.manatee.alt2',
+  'dj:default': 'stage.lemur.alt2',
+  'dj:punk': 'stage.lemur.alt1',
+  'dj:lab_coat': 'stage.lemur.default',
+}
 
 export function drawGame(state) {
   const ctx = state.ctx
@@ -651,11 +665,9 @@ function drawShop(state) {
   drawPowerUpRow(state, BOOST_PRODUCTS[1], 38, 414, '#fce76d', 'iconCoin', 'DOUBLE COINS')
   drawPowerUpRow(state, BOOST_PRODUCTS[2], 38, 470, '#a8fbff', 'iconShield', 'COMBO SHIELD')
 
-  drawOutlinedText(ctx, 'COSMETICS', LOGICAL_WIDTH / 2, 560, 34, '#ffffff', '#234b61', 'center', 1000, 4)
-  drawShopCosmeticCard(state, shopSkinItem(state, 'blingbeak', 'partyhat', '#5cff7b'), 44, 594)
-  drawShopCosmeticCard(state, shopSkinItem(state, 'disco', 'disco', '#a8fbff'), 282, 594)
-  drawShopCosmeticCard(state, shopSkinItem(state, 'coolman', 'king', '#a8fbff'), 44, 772)
-  drawShopCosmeticCard(state, shopSkinItem(state, 'dj', 'punk', '#fce76d'), 282, 772)
+  drawOutlinedText(ctx, 'COSMETICS', LOGICAL_WIDTH / 2, 586, 32, '#ffffff', '#234b61', 'center', 1000, 4)
+  drawShopJudgeSelector(state, 34, 616)
+  drawSelectedJudgeSkins(state, 30, 690)
 }
 
 function shopSkinItem(state, judgeId, skinId, color) {
@@ -665,13 +677,63 @@ function shopSkinItem(state, judgeId, skinId, color) {
   const equipped = state.save.equippedSkins[judgeId] === skinId
   return {
     id: `skin:${judgeId}:${skinId}`,
-    image: state.assets.judgeImages[judgeId]?.[skinId],
+    image: state.assets.images[SHOP_STAGE_SPRITES[`${judgeId}:${skinId}`]] || state.assets.judgeImages[judgeId]?.[skinId],
     price: skin?.price || 0,
     name: skin?.name || 'Skin',
     owned,
     equipped,
     color,
   }
+}
+
+function selectedShopJudge(state) {
+  const selected = JUDGES.find((judge) => judge.id === state.shopSelectedJudgeId)
+  if (selected) return selected
+  const fallback = JUDGES[0]
+  state.shopSelectedJudgeId = fallback.id
+  return fallback
+}
+
+function drawShopJudgeSelector(state, x, y) {
+  const ctx = state.ctx
+  const selected = selectedShopJudge(state)
+  const w = 108
+  const h = 42
+  const gap = 8
+  JUDGES.forEach((judge, index) => {
+    const bx = x + index * (w + gap)
+    const active = judge.id === selected.id
+    const color = active ? judge.color : '#a8fbff'
+    ctx.save()
+    ctx.fillStyle = active ? 'rgba(40, 12, 54, 0.92)' : 'rgba(18, 9, 54, 0.62)'
+    roundRect(ctx, bx, y, w, h, 21)
+    ctx.fill()
+    ctx.strokeStyle = color
+    ctx.lineWidth = active ? 4 : 2
+    roundRect(ctx, bx, y, w, h, 21)
+    ctx.stroke()
+    ctx.restore()
+    drawOutlinedText(ctx, shopJudgeShortName(judge.id), bx + w / 2, y + h / 2, active ? 15 : 13, color, '#24124f', 'center', 1000, 2)
+    button(state, `shopJudge:${judge.id}`, bx, y, w, h)
+  })
+}
+
+function shopJudgeShortName(judgeId) {
+  if (judgeId === 'blingbeak') return 'BIRD'
+  if (judgeId === 'disco') return 'DISCO'
+  if (judgeId === 'coolman') return 'KING'
+  return 'DJ'
+}
+
+function drawSelectedJudgeSkins(state, x, y) {
+  const judge = selectedShopJudge(state)
+  const skins = judge.skins.slice(0, 3)
+  const cardW = 150
+  const cardH = 176
+  const gap = 15
+  skins.forEach((skin, index) => {
+    drawShopCosmeticCard(state, shopSkinItem(state, judge.id, skin.id, judge.color), x + index * (cardW + gap), y, cardW, cardH)
+  })
 }
 
 function drawShopMascot(state) {
@@ -758,11 +820,9 @@ function drawPowerUpRow(state, product, x, y, color, icon, label) {
   button(state, `boost:${product.id}`, x, y, w, h)
 }
 
-function drawShopCosmeticCard(state, item, x, y) {
+function drawShopCosmeticCard(state, item, x, y, w = 214, h = 158) {
   const ctx = state.ctx
   const renderer = state.gameRenderer
-  const w = 214
-  const h = 158
   ctx.save()
   const scalePressed = pressScale(state, x, y, w, h, 0.975)
   ctx.translate(x + w / 2, y + h / 2)
@@ -779,28 +839,30 @@ function drawShopCosmeticCard(state, item, x, y) {
     ctx.stroke()
   }
   if (item.image?.complete && item.image.naturalWidth > 0) {
-    const boxW = w - 28
-    const boxH = h - 44
-    const scale = Math.min(boxW / item.image.naturalWidth, boxH / item.image.naturalHeight) * 1.22
+    const boxW = w - 22
+    const boxH = h - 62
+    const scale = Math.min(boxW / item.image.naturalWidth, boxH / item.image.naturalHeight) * 1.18
     const iw = item.image.naturalWidth * scale
     const ih = item.image.naturalHeight * scale
-    ctx.drawImage(item.image, x + (w - iw) / 2, y + 12 + (boxH - ih) / 2, iw, ih)
+    ctx.drawImage(item.image, x + (w - iw) / 2, y + 24 + (boxH - ih) / 2, iw, ih)
   }
 
+  const labelSize = item.name.length > 10 ? 12 : 14
+  drawOutlinedText(ctx, item.name.toUpperCase(), x + w / 2, y + 18, labelSize, '#ffffff', '#24124f', 'center', 1000, 2)
   const status = item.equipped ? 'EQUIPPED' : item.owned ? 'EQUIP' : `${item.price} coins`
   const statusColor = item.equipped ? '#7cff5b' : item.owned ? '#a8fbff' : '#ffe8ff'
-  drawOutlinedText(ctx, status, x + w / 2, y + h - 22, status.length > 9 ? 23 : 26, statusColor, '#234b61', 'center', 1000, 4)
+  drawOutlinedText(ctx, status, x + w / 2, y + h - 20, status.length > 9 ? 17 : 21, statusColor, '#234b61', 'center', 1000, 3)
   if (item.equipped) {
     ctx.save()
     ctx.fillStyle = 'rgba(124, 255, 91, 0.18)'
-    roundRect(ctx, x + 12, y + 12, 88, 26, 13)
+    roundRect(ctx, x + w / 2 - 42, y + h + 10, 84, 28, 14)
     ctx.fill()
     ctx.strokeStyle = '#7cff5b'
     ctx.lineWidth = 2
-    roundRect(ctx, x + 12, y + 12, 88, 26, 13)
+    roundRect(ctx, x + w / 2 - 42, y + h + 10, 84, 28, 14)
     ctx.stroke()
     ctx.restore()
-    drawOutlinedText(ctx, 'ON', x + 56, y + 25, 15, '#7cff5b', '#1a4320', 'center', 1000, 2)
+    drawOutlinedText(ctx, 'ON', x + w / 2, y + h + 24, 17, '#7cff5b', '#1a4320', 'center', 1000, 2)
   }
   ctx.restore()
   button(state, item.id, x, y, w, h)
@@ -882,35 +944,42 @@ function drawBoostSelect(state) {
     state.screen = 'home'
     return
   }
-  drawHeader(state, 'PRE-RUN BOOSTS', 'TOGGLE THEN START')
-  drawCurrencyBar(state)
-  drawText(
-    ctx,
-    pending.kind === 'endless' ? 'ENDLESS RUN' : `STAGE ${pending.stageId}`,
-    LOGICAL_WIDTH / 2,
-    200,
-    20,
-    '#fce76d',
-    'center',
-    1000,
-  )
+  drawHeader(state, 'PRE-RUN BOOSTS', 'TOGGLE THEN START', {
+    titleY: 134,
+    titleSize: 48,
+    subtitleY: 182,
+    subtitleSize: 29,
+  })
 
   const hasD = (state.save.doubleCoinsRunsRemaining || 0) > 0
   const hasS = (state.save.comboShieldRunsRemaining || 0) > 0
-  drawSpritePanel(state, 64, 232, 412, 240, 'panelCyan')
-  let ty = 258
+  drawBoostPanel(state, 72, 370, 396, 220)
+  let ty = 404
   if (hasD) {
     const on = state.boostSelectUseDoubleCoins
-    drawSpriteButton(state, 'boostToggleDouble', 90, ty, 360, 62, on ? 'buttonCyan' : 'buttonPink', `DOUBLE COINS ${on ? 'ON' : 'OFF'}`, 'iconCoin')
-    ty += 76
+    drawSpriteButton(state, 'boostToggleDouble', 94, ty, 352, 66, on ? 'buttonCyan' : 'buttonPink', `DOUBLE COINS ${on ? 'ON' : 'OFF'}`, 'iconCoin', { labelSize: 25 })
+    ty += 82
   }
   if (hasS) {
     const on = state.boostSelectUseComboShield
-    drawSpriteButton(state, 'boostToggleShield', 90, ty, 360, 62, on ? 'buttonCyan' : 'buttonPink', `COMBO SHIELD ${on ? 'ON' : 'OFF'}`, 'iconShield')
+    drawSpriteButton(state, 'boostToggleShield', 94, ty, 352, 66, on ? 'buttonCyan' : 'buttonPink', `COMBO SHIELD ${on ? 'ON' : 'OFF'}`, 'iconShield', { labelSize: 25 })
   }
 
-  drawSpriteButton(state, 'boostSelectGo', 78, 520, 384, 76, 'buttonGold', 'START RUN', 'iconPlay')
-  drawSpriteButton(state, 'boostSelectCancel', 78, 616, 384, 62, 'buttonPink', 'CANCEL', null)
+  drawSpriteButton(state, 'boostSelectGo', 46, 706, 448, 102, 'buttonGold', 'START RUN', 'iconPlay', { labelSize: 34, iconSize: 48, textXOffset: -18 })
+  drawSpriteButton(state, 'boostSelectCancel', 94, 830, 352, 80, 'buttonPink', 'CANCEL', null, { labelSize: 31 })
+}
+
+function drawBoostPanel(state, x, y, w, h) {
+  const ctx = state.ctx
+  ctx.save()
+  ctx.fillStyle = 'rgba(18, 9, 54, 0.76)'
+  roundRect(ctx, x, y, w, h, 28)
+  ctx.fill()
+  ctx.strokeStyle = '#a8fbff'
+  ctx.lineWidth = 3
+  roundRect(ctx, x, y, w, h, 28)
+  ctx.stroke()
+  ctx.restore()
 }
 
 function drawResults(state) {
@@ -1519,10 +1588,39 @@ function drawVanishingTarget(ctx, target, theme, time) {
 }
 
 function drawTapTarget(ctx, target, progress, theme) {
+  const isSequence = Number.isFinite(target.sequenceIndex)
   const ring = 44 + (1 - clamp(progress, 0, 1)) * 78
   const { outer, inner } = theme.ringTap
+  ctx.save()
+  if (isSequence && target.age < -0.02) ctx.globalAlpha = 0.58
+  if (isSequence && Number.isFinite(target.sequencePrevX) && Number.isFinite(target.sequencePrevY)) {
+    drawTapSequenceConnector(ctx, target, outer)
+  }
   drawGlowCircle(ctx, target.x, target.y, ring, outer, false)
   drawGlowCircle(ctx, target.x, target.y, 44, inner, true)
+  if (isSequence) {
+    drawOutlinedText(ctx, String((target.sequenceIndex ?? 0) + 1), target.x, target.y, 27, '#ffffff', '#24124f', 'center', 1000, 4)
+  }
+  ctx.restore()
+}
+
+function drawTapSequenceConnector(ctx, target, color) {
+  ctx.save()
+  ctx.globalAlpha *= 0.56
+  ctx.strokeStyle = color
+  ctx.lineWidth = 9
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(target.sequencePrevX, target.sequencePrevY)
+  ctx.lineTo(target.x, target.y)
+  ctx.stroke()
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)'
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.moveTo(target.sequencePrevX, target.sequencePrevY)
+  ctx.lineTo(target.x, target.y)
+  ctx.stroke()
+  ctx.restore()
 }
 
 function drawHoldTarget(ctx, target, progress, theme) {
@@ -1828,13 +1926,13 @@ function drawCurrencyBar(state) {
   drawText(ctx, `${state.save.highScore}`, 390, 130, 18, '#ffffff', 'left', 1000)
 }
 
-function drawHeader(state, title, subtitle) {
+function drawHeader(state, title, subtitle, options = {}) {
   const ctx = state.ctx
-  drawText(ctx, title, LOGICAL_WIDTH / 2, 52, title.length > 18 ? 28 : 34, '#ffffff', 'center', 1000)
-  drawText(ctx, subtitle, LOGICAL_WIDTH / 2, 86, 14, '#fce76d', 'center', 900)
+  drawText(ctx, title, LOGICAL_WIDTH / 2, options.titleY ?? 52, options.titleSize ?? (title.length > 18 ? 28 : 34), '#ffffff', 'center', 1000)
+  drawText(ctx, subtitle, LOGICAL_WIDTH / 2, options.subtitleY ?? 86, options.subtitleSize ?? 14, '#fce76d', 'center', 900)
 }
 
-function drawSpriteButton(state, id, x, y, w, h, sprite, label, icon) {
+function drawSpriteButton(state, id, x, y, w, h, sprite, label, icon, options = {}) {
   const ctx = state.ctx
   const scale = pressScale(state, x, y, w, h, 0.965)
   ctx.save()
@@ -1842,8 +1940,10 @@ function drawSpriteButton(state, id, x, y, w, h, sprite, label, icon) {
   ctx.scale(scale, scale)
   ctx.translate(-(x + w / 2), -(y + h / 2))
   drawImage(ctx, state.assets.images[sprite], x, y, w, h)
-  if (icon) drawIcon(ctx, state.assets.images[icon], x + 22, y + h / 2 - 22, 44)
-  drawOutlinedText(ctx, label, x + w / 2 + (icon ? 18 : 0), y + h / 2, label.length > 18 ? 20 : 27, spriteButtonTextColor(sprite), '#2d1648', 'center', 1000, 3)
+  const iconSize = options.iconSize ?? 44
+  if (icon) drawIcon(ctx, state.assets.images[icon], x + (options.iconXOffset ?? 22), y + h / 2 - iconSize / 2, iconSize)
+  const labelSize = options.labelSize ?? (label.length > 18 ? 20 : 27)
+  drawOutlinedText(ctx, label, x + w / 2 + (icon ? 18 : 0) + (options.textXOffset ?? 0), y + h / 2 + (options.textYOffset ?? 0), labelSize, spriteButtonTextColor(sprite), '#2d1648', 'center', 1000, 3)
   ctx.restore()
   button(state, id, x, y, w, h)
 }

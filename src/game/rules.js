@@ -175,6 +175,11 @@ export function skinsForJudge(judgeId) {
   return JUDGES.find((judge) => judge.id === judgeId)?.skins || []
 }
 
+export const FTUE_STAGE_ONE_DURATION = 30
+export const ENDLESS_TIER_SECONDS = 25
+export const ENDLESS_RAMP_DIVISOR = 150
+export const COIN_REWARD_MULTIPLIER = 20
+
 export const STAGES = [
   {
     id: 1,
@@ -252,7 +257,7 @@ export const STAGES = [
     cardTitle: 'MIXED CHAOS',
     cardColor: '#5cff7b',
     duration: 60,
-    kinds: ['tap', 'slide', 'hold'],
+    kinds: ['tap', 'slide', 'hold', 'tapChain'],
     difficulty: 0.34,
     judgeIndex: 3,
     portraitId: AssetIds.stagePortraits.stage4,
@@ -263,7 +268,7 @@ export const STAGES = [
     cardTitle: 'THE FINAL SHOW',
     cardColor: '#9b7dff',
     duration: 75,
-    kinds: ['tap', 'slide', 'hold'],
+    kinds: ['tap', 'slide', 'hold', 'tapChain'],
     difficulty: 0.56,
     judgeIndex: 0,
     portraitId: AssetIds.stagePortraits.stage5,
@@ -333,10 +338,11 @@ export function qualityFromTiming(errorSeconds) {
 
 export function difficultyProfile(run) {
   const elapsed = run.elapsed
-  const tier = run.mode === 'endless' ? Math.floor(elapsed / 30) : 0
+  const tier = run.mode === 'endless' ? Math.floor(elapsed / ENDLESS_TIER_SECONDS) : 0
   const stageBoost = run.mode === 'stage' ? run.stage?.difficulty ?? 0 : 0
   const ftue = Boolean(run.ftue)
-  const elapsedDivisor = ftue ? 95 : 180
+  const stageProgress = run.mode === 'stage' && Number.isFinite(run.duration) ? clamp(elapsed / Math.max(1, run.duration), 0, 1) : 0
+  const elapsedDivisor = ftue ? 95 : run.mode === 'stage' ? 120 : ENDLESS_RAMP_DIVISOR
 
   if (ftue && run.stage?.id === 1) {
     const lessonT = clamp(run.spawnCount / 12, 0, 1)
@@ -354,7 +360,8 @@ export function difficultyProfile(run) {
   }
 
   const ftueBoost = ftue ? 0.14 : 0
-  const ramp = Math.min(1, tier * 0.14 + elapsed / elapsedDivisor + stageBoost + ftueBoost)
+  const stageOneReplayBoost = !ftue && run.mode === 'stage' && run.stage?.id === 1 ? stageProgress * 0.34 : 0
+  const ramp = Math.min(1, tier * 0.14 + elapsed / elapsedDivisor + stageBoost + stageOneReplayBoost + ftueBoost)
   return {
     tier,
     ramp,
@@ -371,8 +378,8 @@ export function resolveTargetKind(run) {
     return run.stage.kinds[run.spawnCount % run.stage.kinds.length]
   }
 
-  const tier = Math.floor(run.elapsed / 30)
-  const cycle = tier < 1 ? ['tap', 'tap', 'hold'] : tier < 2 ? ['tap', 'slide', 'tap', 'hold'] : ['tap', 'slide', 'hold', 'tap', 'slide']
+  const tier = Math.floor(run.elapsed / ENDLESS_TIER_SECONDS)
+  const cycle = tier < 1 ? ['tap', 'tap', 'hold'] : tier < 2 ? ['tap', 'slide', 'tap', 'hold'] : ['tap', 'slide', 'hold', 'tapChain', 'tap', 'slide']
   return cycle[run.spawnCount % cycle.length]
 }
 
@@ -381,7 +388,7 @@ export function coinsForResults(run, previousStageBest) {
   let coins = Math.max(5, Math.floor(run.score / 500))
   if (run.mode === 'stage' && run.completed && !previousStageBest?.cleared) coins += 50
   if (run.mode === 'stage' && run.completed && gradeRank(run.grade) > gradeRank(previousStageBest?.grade || 'FAILED')) coins += 25
-  return coins
+  return coins * COIN_REWARD_MULTIPLIER
 }
 
 export function clamp(value, min, max) {
