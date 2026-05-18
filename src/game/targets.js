@@ -427,9 +427,6 @@ function resolveHit(state, target, quality, caption) {
   const nextCombo = run.combo + 1
   const gained = scoreForHit(quality, nextCombo)
   run.score += gained
-  if (quality === 'perfect') {
-    emitEffect(state, { type: 'hitStop', startedAt: state.time, until: state.time + 0.055 })
-  }
   if (quality === 'okay' || quality === 'perfect') {
     run.shakeStartedAt = state.time
     run.shakeUntil = state.time + (quality === 'perfect' ? 0.18 : 0.11)
