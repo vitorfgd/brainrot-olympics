@@ -1355,7 +1355,6 @@ function drawTimeUpSplash(state, run) {
   ctx.translate(LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2)
   ctx.scale(1.25 - easeOutCubic(progress) * 0.15, 1.25 - easeOutCubic(progress) * 0.15)
   drawOutlinedText(ctx, 'TIME UP', 0, -8, 58, color, '#234b61', 'center', 1000, 6)
-  drawOutlinedText(ctx, run.hp > 0 ? 'STAGE CLEAR' : 'NO HP', 0, 54, 28, run.hp > 0 ? '#fce76d' : HOT_PINK, '#421139', 'center', 1000, 4)
   ctx.restore()
 }
 

@@ -132,7 +132,6 @@ export function updateRun(state) {
     run.targets = []
     run.activeTargetId = null
     requestStopRunMusic(state)
-    requestSound(state, run.hp > 0 ? 'stageClear' : 'runFailed', 0.85)
   }
 
   if (run.timeUpUntil && state.time >= run.timeUpUntil) {
